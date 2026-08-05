@@ -136,7 +136,7 @@ export function extractLabels(text) {
   return [...labels];
 }
 
-/** `uses: actions/setup-node@v4` -> Node.js */
+/** `uses: actions/setup-node@v5` -> Node.js (any version suffix; only the owner/repo matters) */
 export function extractSetupActions(text) {
   const tools = new Set();
   for (const m of String(text ?? '').matchAll(/uses:\s*['"]?([\w.-]+\/[\w.-]+)/g)) {

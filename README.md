@@ -6,7 +6,7 @@
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](package.json)
 
-**Your CI is pinned to `actions/checkout@v4` and `node@22`. It is not pinned to the
+**Your CI is pinned to `actions/checkout@v5` and `node@22`. It is not pinned to the
 compiler.** GitHub rebuilds the hosted runner images roughly weekly and you cannot
 select an older one — [the feature request was rejected](https://github.com/actions/runner-images/issues/13034#issuecomment-3350116604)
 ("there's no technical feasibility for implementation yet"), and GitHub staff have

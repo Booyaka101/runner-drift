@@ -113,8 +113,10 @@ automated): <https://github.com/marketplace/actions/runner-drift> — category
 auto-remove below their karma floor). Posting there would be silently removed and burn
 the account rather than reach anyone. Worth revisiting once those accounts have karma.
 
-Optional cleanup: `actions/checkout@v4` and `actions/setup-node@v4` emit a Node 20
-deprecation warning on current runners. Harmless today; bump to `@v5` when convenient.
+Done 2026-08-05: `actions/checkout` and `actions/setup-node` bumped `@v4` → `@v5` in
+`.github/workflows/ci.yml`, clearing the Node 20 deprecation warning (v4 is
+`using: node20`; v5, v6 and v7 are all `using: node24`). Latest upstream is v7 for
+both if you ever want to go further; v5 is enough to silence the warning.
 
 ## Notes for a future maintainer
 
