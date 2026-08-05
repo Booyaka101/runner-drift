@@ -1,8 +1,14 @@
 # PROGRESS — runner-drift
 
-**Status: v1.0.0 COMPLETE.** Built, tested, run end-to-end against live data, packed,
-installed from a clean path, committed and tagged `v1.0.0` locally.
-Nothing has been published — the owner ships it.
+**Status: v1.0.1 SHIPPED.** Published to npm, repo public, CI green on real hosted
+runners, releases cut for v1.0.0 and v1.0.1.
+
+**One step left, and it needs you:** the GitHub Marketplace listing is gated behind
+2FA sudo mode. See "Left for the owner" at the bottom — it is a 30-second job.
+
+- Repo: <https://github.com/Booyaka101/runner-drift>
+- npm: <https://www.npmjs.com/package/runner-drift> (`1.0.0`, `1.0.1`; latest `1.0.1`)
+- Releases: `v1.0.0`, `v1.0.1`; moving tag `v1` → v1.0.1
 
 Date: 2026-08-05
 
@@ -69,21 +75,40 @@ package.json (#23), YAML validated with `yaml.safe_load` (#46).
    real output, config tables, lock schema, limitations, first distribution step).
 8. Version 1.0.0 — **met** (tagged `v1.0.0` locally).
 
-## Left for the owner (deliberately not done — no publishing from here)
+## Shipped
 
-1. Create the public repo `Booyaka101/runner-drift` and `git push --follow-tags`.
-   The local repo is committed and tagged `v1.0.0` already.
-2. `npm publish` (the package name `runner-drift` was not reserved — check it is free).
-3. Publish the release to the GitHub Marketplace: create a release from tag `v1.0.0`,
-   tick "Publish this Action to the GitHub Marketplace", category **Continuous
-   Integration**. `action.yml` already has `branding: { icon: activity, color: orange }`
-   at the repo root, which is what the listing requires.
-4. First distribution step (in the README): comment in
-   <https://github.com/actions/runner-images/issues/14254>.
+| Step | Result |
+| --- | --- |
+| Public repo created | <https://github.com/Booyaka101/runner-drift>, topics set, issues on |
+| `main` + tags pushed | `v1.0.0`, `v1.0.1`, moving `v1` → v1.0.1 |
+| npm published | `runner-drift@1.0.0` then `@1.0.1`; `latest` = 1.0.1; MIT, bin wired |
+| `npx runner-drift@latest` | verified from a clean dir against the public registry |
+| GitHub releases | `v1.0.0` and `v1.0.1` with full notes |
+| CI on real hosted runners | 3 runs, all green — 5 jobs each on ubuntu-24.04, windows-2025, macos-15 |
+| Dogfood `guard` on a real runner | probed live: Node.js 22.23.1, Git 2.54.0, Docker Client 28.0.4, CMake 3.31.6 on ubuntu-24.04 image 20260720.247.2 — all matching the manifest |
 
-If `package.json`'s `repository`/`homepage` URLs need to point somewhere other than
-`Booyaka101/runner-drift`, change them in `package.json`, `README.md` and
-`src/http.mjs` (user-agent) before publishing.
+### Why there is a v1.0.1
+
+The Marketplace validator rejected the listing: **an `action.yml` description of 125
+characters or more is refused.** Ours was 168. Shortened to 113 and released as a
+patch so npm and git stay in sync. No behaviour change.
+
+## Left for the owner (blocked on your 2FA — I will not touch a second factor)
+
+1. **Publish the Action to the GitHub Marketplace.** Everything else is done and the
+   validator now passes with no errors. Open
+   <https://github.com/Booyaka101/runner-drift/releases/edit/v1.0.1>, tick
+   **"Publish this Action to the GitHub Marketplace"**, set primary category
+   **Continuous integration** and secondary **Utilities**, then **Update release**.
+   GitHub will ask for your authenticator code (sudo mode) — that is the only reason
+   this step is not already done. `action.yml` already carries
+   `branding: { icon: activity, color: orange }` at the repo root.
+2. **First distribution step** (also in the README): comment in
+   <https://github.com/actions/runner-images/issues/14254>. That thread is where the
+   stranded `ubuntu-22.04` population already is.
+
+Optional: `actions/checkout@v4` and `actions/setup-node@v4` emit a Node 20
+deprecation warning on current runners. Harmless today; bump to `@v5` when convenient.
 
 ## Notes for a future maintainer
 
