@@ -21,6 +21,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
+      # Our own tool. Locks the runner image's tool versions and diffs them when
+      # GitHub bumps the image — including when a floating label like
+      # ubuntu-latest silently re-points. Report-only; no fail-on yet.
+      - name: Runner image drift
+        uses: Booyaka101/runner-drift@v1
       - uses: actions/setup-node@v5
         with:
           node-version: '22'
