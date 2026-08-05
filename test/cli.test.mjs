@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { main, EXIT_OK, EXIT_USAGE } from '../src/cli.mjs';
 import { captureIO } from './helpers.mjs';
 
@@ -18,10 +19,11 @@ test('--help prints usage and exits 0', async () => {
   assert.match(r.stdout, /Known labels: ubuntu-22\.04/);
 });
 
-test('--version prints the package version', async () => {
+test('--version prints the version from package.json', async () => {
+  const pkg = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
   const r = await run(['--version']);
   assert.equal(r.code, EXIT_OK);
-  assert.equal(r.stdout.trim(), '1.0.0');
+  assert.equal(r.stdout.trim(), pkg.version);
 });
 
 test('no command prints usage to stderr and exits 2', async () => {

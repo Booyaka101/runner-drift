@@ -4,6 +4,19 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-08-05
+
+### Fixed
+
+- `action.yml`'s `description` was 168 characters; the GitHub Marketplace rejects
+  anything 125 or longer, so the listing could not be published. Shortened to 113.
+
+### Changed
+
+- `action.yml` `version` input now defaults to `1.0.1`.
+
+[1.0.1]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.0.1
+
 ## [1.0.0] — 2026-08-05
 
 First release.

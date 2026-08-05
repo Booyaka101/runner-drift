@@ -1,6 +1,7 @@
 name: 'runner-drift'
-description: 'Detect, attribute and report GitHub Actions runner-image tool drift. Locks the tool versions your CI actually uses and names the runner-images commit that changed them.'
-author: 'runner-drift contributors'
+# NOTE: the GitHub Marketplace rejects a description of 125 characters or more.
+description: 'Lock the tool versions your CI uses, diff them on every runner-image bump, and name the commit that changed them.'
+author: 'Booyaka101'
 
 branding:
   icon: 'activity'
@@ -26,7 +27,7 @@ inputs:
   version:
     description: 'npm version of runner-drift to run.'
     required: false
-    default: '1.0.0'
+    default: '1.0.1'
   github-token:
     description: 'Token used only to raise the api.github.com rate limit.'
     required: false
