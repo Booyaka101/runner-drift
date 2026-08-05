@@ -155,7 +155,7 @@ or above the `--fail-on` threshold, `2` usage / configuration error.
 | `tools` | `''` | Comma-separated override |
 | `lock-file` | `runner-lock.json` | Lock file path |
 | `workflows` | `.github/workflows` | Scanned when there is no lock yet |
-| `version` | `1.0.0` | npm version of `runner-drift` to run |
+| `version` | `1.0.1` | npm version of `runner-drift` to run |
 | `github-token` | `${{ github.token }}` | Rate limit only |
 
 ### `runner-lock.json`
