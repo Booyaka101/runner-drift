@@ -1,5 +1,11 @@
 # runner-drift
 
+[![npm](https://img.shields.io/npm/v/runner-drift?color=cb3837&logo=npm)](https://www.npmjs.com/package/runner-drift)
+[![Marketplace](https://img.shields.io/badge/Marketplace-runner--drift-2ea44f?logo=github)](https://github.com/marketplace/actions/runner-drift)
+[![ci](https://github.com/Booyaka101/runner-drift/actions/workflows/ci.yml/badge.svg)](https://github.com/Booyaka101/runner-drift/actions/workflows/ci.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![node](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](package.json)
+
 **Your CI is pinned to `actions/checkout@v4` and `node@22`. It is not pinned to the
 compiler.** GitHub rebuilds the hosted runner images roughly weekly and you cannot
 select an older one — [the feature request was rejected](https://github.com/actions/runner-images/issues/13034#issuecomment-3350116604)
@@ -227,13 +233,11 @@ Tests run against four **real** manifest snapshots in `test/fixtures/`
 (`Ubuntu2204` at two different image versions, `Ubuntu2404`, `macos-15`), so the
 golden `plan` output is deterministic while the live path re-fetches.
 
-## First distribution step
+## Where to find it
 
-Post it in the [`ubuntu-22.04` deprecation thread
-(actions/runner-images#14254)](https://github.com/actions/runner-images/issues/14254).
-Everyone subscribed there is, right now, trying to work out what breaks when they
-move — that is exactly the question `plan` answers, and the thread is the highest
-concentration of that audience anywhere.
+- npm — <https://www.npmjs.com/package/runner-drift>
+- GitHub Marketplace — <https://github.com/marketplace/actions/runner-drift>
+- Write-up — [You can't pin a GitHub Actions runner image, but you can find out exactly what changed](https://dev.to/booyaka101/you-cant-pin-a-github-actions-runner-image-but-you-can-find-out-exactly-what-changed-58hm)
 
 ## License
 

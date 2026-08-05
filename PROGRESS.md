@@ -93,21 +93,27 @@ The Marketplace validator rejected the listing: **an `action.yml` description of
 characters or more is refused.** Ours was 168. Shortened to 113 and released as a
 patch so npm and git stay in sync. No behaviour change.
 
-## Left for the owner (blocked on your 2FA — I will not touch a second factor)
+## Marketplace
 
-1. **Publish the Action to the GitHub Marketplace.** Everything else is done and the
-   validator now passes with no errors. Open
-   <https://github.com/Booyaka101/runner-drift/releases/edit/v1.0.1>, tick
-   **"Publish this Action to the GitHub Marketplace"**, set primary category
-   **Continuous integration** and secondary **Utilities**, then **Update release**.
-   GitHub will ask for your authenticator code (sudo mode) — that is the only reason
-   this step is not already done. `action.yml` already carries
-   `branding: { icon: activity, color: orange }` at the repo root.
-2. **First distribution step** (also in the README): comment in
-   <https://github.com/actions/runner-images/issues/14254>. That thread is where the
-   stranded `ubuntu-22.04` population already is.
+Listed by the owner (the publish step is gated behind 2FA sudo mode, so it cannot be
+automated): <https://github.com/marketplace/actions/runner-drift> — category
+**Continuous integration**, secondary **Utilities**.
 
-Optional: `actions/checkout@v4` and `actions/setup-node@v4` emit a Node 20
+## Distribution (done 2026-08-05)
+
+| Channel | Link | Why this one |
+| --- | --- | --- |
+| `actions/runner-images` **#13034** | [comment](https://github.com/actions/runner-images/issues/13034#issuecomment-5187164061) | The rejected "let me pin an image version" request. Named, frustrated users whose ask GitHub declined — the exact stranded population. Comment leads with the public mechanism, tool disclosed as ours at the end |
+| `actions/runner-images` **#14254** | [comment](https://github.com/actions/runner-images/issues/14254#issuecomment-5187164459) | The `ubuntu-22.04` deprecation thread. Quiet today (3 comments) but it is where people land when they search the deprecation, and it will heat up as the 2027-03-23 brownouts approach. Comment leads with the real 22.04→24.04 delta table |
+| dev.to | [article](https://dev.to/booyaka101/you-cant-pin-a-github-actions-runner-image-but-you-can-find-out-exactly-what-changed-58hm) | Long-form + search traffic. Tags: `githubactions`, `devops`, `opensource`, `ci` |
+| X / @KillKenny101 | [post](https://x.com/KillKenny101/status/2084844881894375804) | Short announce, link card resolved |
+
+**Deliberately skipped:** Hacker News (Booyaka101 has 3 karma — `/submit` bounces to
+`story-toofast`) and Reddit (1 karma on the available account; r/devops-class subs
+auto-remove below their karma floor). Posting there would be silently removed and burn
+the account rather than reach anyone. Worth revisiting once those accounts have karma.
+
+Optional cleanup: `actions/checkout@v4` and `actions/setup-node@v4` emit a Node 20
 deprecation warning on current runners. Harmless today; bump to `@v5` when convenient.
 
 ## Notes for a future maintainer
