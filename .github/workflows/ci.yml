@@ -27,6 +27,11 @@ jobs:
       - run: node --test
       - run: node src/cli.mjs --help
 
+      # The published action, run inside its own repo — the case that used to
+      # fail with exit 127. Keeping it here is what proves 1.0.2 fixed it.
+      - name: Runner image drift (published action, self-hosted case)
+        uses: ./
+
   live:
     runs-on: ubuntu-24.04
     steps:

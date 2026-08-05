@@ -27,7 +27,7 @@ inputs:
   version:
     description: 'npm version of runner-drift to run.'
     required: false
-    default: '1.0.1'
+    default: '1.0.2'
   github-token:
     description: 'Token used only to raise the api.github.com rate limit.'
     required: false
@@ -52,8 +52,20 @@ runs:
         RD_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        args=(guard --lock-file "$RD_LOCK_FILE" --workflows "$RD_WORKFLOWS")
+        # Absolute paths, because npx runs from a neutral directory below.
+        cd "$GITHUB_WORKSPACE"
+        abs() { case "$1" in /*) printf '%s' "$1";; *) printf '%s/%s' "$PWD" "$1";; esac; }
+        LOCK_ABS="$(abs "$RD_LOCK_FILE")"
+        WF_ABS="$(abs "$RD_WORKFLOWS")"
+        args=(guard --lock-file "$LOCK_ABS" --workflows "$WF_ABS")
         if [ -n "$RD_FAIL_ON" ]; then args+=(--fail-on "$RD_FAIL_ON"); fi
         if [ -n "$RD_TOOLS" ]; then args+=(--tools "$RD_TOOLS"); fi
         printf 'lock-file=%s\n' "$RD_LOCK_FILE" >> "$GITHUB_OUTPUT"
-        npx --yes "runner-drift@${RD_VERSION}" "${args[@]}"
+        # npx resolves a bin against the CWD's package.json first. In a checkout
+        # whose package.json is itself named runner-drift at the same version --
+        # i.e. this repo -- it decides the package is already present, looks for
+        # node_modules/.bin/runner-drift, and dies with "runner-drift: not found"
+        # (exit 127) before any install has run. Invoking from an empty directory
+        # removes the ambiguity; --package= does NOT, it is the CWD that matters.
+        RD_TMP="$(mktemp -d)"
+        ( cd "$RD_TMP" && npx --yes "runner-drift@${RD_VERSION}" "${args[@]}" )
