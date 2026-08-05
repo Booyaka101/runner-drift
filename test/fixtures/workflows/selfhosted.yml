@@ -1,0 +1,15 @@
+name: nightly-bench
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+
+jobs:
+  bench:
+    runs-on:
+      - self-hosted
+      - linux
+      - gpu
+    steps:
+      - uses: actions/checkout@v4
+      - run: python bench/run.py --full

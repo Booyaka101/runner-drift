@@ -1,0 +1,49 @@
+{
+  "name": "runner-drift",
+  "version": "1.0.0",
+  "description": "Detect and attribute GitHub Actions runner-image tool drift: lock the tool versions your CI actually uses, diff them on every image bump, and plan a runner label migration before the deprecation deadline.",
+  "type": "module",
+  "bin": {
+    "runner-drift": "src/cli.mjs"
+  },
+  "exports": {
+    ".": "./src/index.mjs",
+    "./manifest": "./src/manifest.mjs",
+    "./detect": "./src/detect.mjs",
+    "./diff": "./src/diff.mjs"
+  },
+  "files": [
+    "src/",
+    "action.yml",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node --test test/",
+    "lint": "node --check src/cli.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": [
+    "github-actions",
+    "ci",
+    "runner-images",
+    "deprecation",
+    "ubuntu-22.04",
+    "drift",
+    "migration",
+    "actions"
+  ],
+  "author": "runner-drift contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Booyaka101/runner-drift.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Booyaka101/runner-drift/issues"
+  },
+  "homepage": "https://github.com/Booyaka101/runner-drift#readme"
+}

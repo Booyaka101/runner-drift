@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Runner images roll roughly weekly; a scheduled run is what catches drift.
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node --test
+      - run: node src/cli.mjs --help
+
+  live:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: plan against the live runner-images manifests
+        run: node src/cli.mjs plan --from ubuntu-22.04 --to ubuntu-24.04 --workflows test/fixtures/workflows
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+  guard:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: guard (dogfood — reports drift, never fails the build)
+        run: node src/cli.mjs guard --tools node,git,docker,cmake
+        env:
+          GITHUB_TOKEN: ${{ github.token }}

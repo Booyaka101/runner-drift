@@ -1,0 +1,58 @@
+name: 'runner-drift'
+description: 'Detect, attribute and report GitHub Actions runner-image tool drift. Locks the tool versions your CI actually uses and names the runner-images commit that changed them.'
+author: 'runner-drift contributors'
+
+branding:
+  icon: 'activity'
+  color: 'orange'
+
+inputs:
+  fail-on:
+    description: 'Fail the job on drift of at least this severity: major, minor or any. Omit to never fail (report only).'
+    required: false
+    default: ''
+  tools:
+    description: 'Comma-separated tools to watch (e.g. python,cmake,clang). Omit to use the lock file, then workflow detection.'
+    required: false
+    default: ''
+  lock-file:
+    description: 'Path to runner-lock.json.'
+    required: false
+    default: 'runner-lock.json'
+  workflows:
+    description: 'Workflow directory scanned when there is no lock file yet.'
+    required: false
+    default: '.github/workflows'
+  version:
+    description: 'npm version of runner-drift to run.'
+    required: false
+    default: '1.0.0'
+  github-token:
+    description: 'Token used only to raise the api.github.com rate limit.'
+    required: false
+    default: ${{ github.token }}
+
+outputs:
+  lock-file:
+    description: 'Path to the lock file that was read/written.'
+    value: ${{ steps.guard.outputs.lock-file }}
+
+runs:
+  using: 'composite'
+  steps:
+    - id: guard
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        RD_FAIL_ON: ${{ inputs.fail-on }}
+        RD_TOOLS: ${{ inputs.tools }}
+        RD_LOCK_FILE: ${{ inputs.lock-file }}
+        RD_WORKFLOWS: ${{ inputs.workflows }}
+        RD_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        args=(guard --lock-file "$RD_LOCK_FILE" --workflows "$RD_WORKFLOWS")
+        if [ -n "$RD_FAIL_ON" ]; then args+=(--fail-on "$RD_FAIL_ON"); fi
+        if [ -n "$RD_TOOLS" ]; then args+=(--tools "$RD_TOOLS"); fi
+        printf 'lock-file=%s\n' "$RD_LOCK_FILE" >> "$GITHUB_OUTPUT"
+        npx --yes "runner-drift@${RD_VERSION}" "${args[@]}"

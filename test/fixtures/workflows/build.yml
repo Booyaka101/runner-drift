@@ -1,0 +1,22 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  native:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: clang --version
+      - name: Configure
+        run: |
+          cmake -S . -B build -DCMAKE_C_COMPILER=clang
+          cmake --build build --parallel
+      - name: Generate bindings
+        run: python tools/gen_bindings.py --out build/bindings
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
