@@ -5,13 +5,19 @@
 green on all five jobs including the `uses: ./` step that installs the
 published package on ubuntu, windows and macOS.
 
-**Not done yet:** git tag `v1.1.0`, moving the `v1` tag, and the GitHub release.
-Consumers on `Booyaka101/runner-drift@v1` still get the 1.0.2 action.yml, which
-works but has no `fail-on-retirement` input. The Marketplace step needs 2FA.
+Tagged `v1.1.0`, moved `v1` onto it, and cut the GitHub release, so
+`Booyaka101/runner-drift@v1` now serves the action.yml with the
+`fail-on-retirement` input. The Marketplace listing already exists from 1.0.1
+and picks up the new release; re-ticking it needs 2FA if it ever drops off.
+
+**Left to do:** wire `fail-on-retirement` into the guard steps of the 14 repos
+that already run runner-drift in CI. That is the dogfood pass from LESSONS
+2026-08-05, and it is what puts the October macos-14 brownouts on a countdown
+before they land.
 
 - Repo: <https://github.com/Booyaka101/runner-drift>
 - npm: <https://www.npmjs.com/package/runner-drift> (latest: `1.1.0`)
-- Releases: `v1.0.0`–`v1.0.2`; moving tag `v1` still → v1.0.2
+- Releases: `v1.0.0`–`v1.1.0`; moving tag `v1` → v1.1.0 (`0e4c775`)
 
 Date: 2026-08-12
 
