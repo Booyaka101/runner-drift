@@ -1,11 +1,17 @@
 # PROGRESS — runner-drift
 
-**Status: v1.1.0 BUILT, ready to release.** All 136 tests green, acceptance
-verified end to end, PR opened (see below). Owner publishes from the phone.
+**Status: v1.1.0 PUBLISHED.** PR #1 merged to main (rebased, `00ea325`),
+`runner-drift@1.1.0` live on npm as `latest`, and CI on the merged commit is
+green on all five jobs including the `uses: ./` step that installs the
+published package on ubuntu, windows and macOS.
+
+**Not done yet:** git tag `v1.1.0`, moving the `v1` tag, and the GitHub release.
+Consumers on `Booyaka101/runner-drift@v1` still get the 1.0.2 action.yml, which
+works but has no `fail-on-retirement` input. The Marketplace step needs 2FA.
 
 - Repo: <https://github.com/Booyaka101/runner-drift>
-- npm: <https://www.npmjs.com/package/runner-drift> (latest published: `1.0.2`)
-- Releases: `v1.0.0`–`v1.0.2`; moving tag `v1` → v1.0.2
+- npm: <https://www.npmjs.com/package/runner-drift> (latest: `1.1.0`)
+- Releases: `v1.0.0`–`v1.0.2`; moving tag `v1` still → v1.0.2
 
 Date: 2026-08-12
 
