@@ -235,8 +235,8 @@ mistaken for a version change.
 `ubuntu-22.04`, `ubuntu-24.04`, `ubuntu-26.04` (+ `-arm`), `windows-2022`,
 `windows-2025`, `macos-14`, `macos-15`, `macos-26` (+ `-arm64`).
 
-Deadline data currently covers `ubuntu-22.04` (+ arm) and `macos-14` (+ arm64,
-`-large`, `-xlarge`) — the images with an announced retirement date. The
+Deadline data covers the images with an announced retirement date:
+`ubuntu-22.04` (+ arm) and `macos-14` (+ arm64, `-large`, `-xlarge`). The
 large/xlarge labels have no public manifest, so they get the retirement
 countdown and `--fail-on-retirement`, not the tool diff. Every other label
 diffs fine, it just has no countdown.

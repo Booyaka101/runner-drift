@@ -100,8 +100,7 @@ export const DEADLINES = {
     source: 'https://github.com/actions/runner-images/issues/13518',
     sourceRef: 'actions/runner-images#13518',
   },
-  // large/xlarge have no readme in runner-images, so no LABEL_PATHS entry —
-  // they retire on the same schedule and still deserve a countdown.
+  // No readme in runner-images, hence no LABEL_PATHS entry: countdown only.
   'macos-14-large': {
     deprecationStart: '2026-07-06',
     fullyUnsupported: '2026-11-02',
@@ -147,8 +146,7 @@ export function normaliseLabel(raw) {
 
 const MS_PER_DAY = 86_400_000;
 
-// Same semantics as report.mjs daysUntil (UTC midnight, Math.round); private
-// copy because report.mjs already imports this module.
+// Duplicated from report.mjs, which imports this module: UTC midnight, rounded.
 function daysUntilDate(dateStr, now) {
   const target = Date.parse(`${dateStr}T00:00:00Z`);
   if (!Number.isFinite(target)) return null;

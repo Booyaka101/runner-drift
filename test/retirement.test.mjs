@@ -11,8 +11,8 @@ import { detect } from '../src/detect.mjs';
 import { runGuard, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
 import { captureIO, FIXTURES } from './helpers.mjs';
 
-// The brief's worked example: today is 2026-08-12. macos-14 browns out in 54
-// days and retires in 82; ubuntu-22.04 is 223 and 248 days out.
+// At this date macos-14 browns out in 54 days and retires in 82;
+// ubuntu-22.04 is 223 and 248 days out.
 const NOW = new Date('2026-08-12T00:00:00Z');
 const WORKFLOWS = path.join(FIXTURES, 'workflows-retirement');
 

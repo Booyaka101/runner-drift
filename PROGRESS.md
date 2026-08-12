@@ -21,8 +21,9 @@ Built per brief; Phase 0 re-verified all three sources live (issues 14254 and
 What changed:
 
 - `src/labels.mjs`: macos-14/-arm64 brownout dates filled in (were `[]`); new
-  `macos-14-large` / `macos-14-xlarge` DEADLINES rows (no LABEL_PATHS — manifest
-  lookups skip them cleanly); new exports `nextBrownout()`, `retirementStatus()`.
+  `macos-14-large` / `macos-14-xlarge` DEADLINES rows (no LABEL_PATHS, so
+  manifest lookups skip them cleanly); new exports `nextBrownout()`,
+  `retirementStatus()`.
 - `src/detect.mjs`: `extractLabelSites()`; `analyseWorkflow`/`detect` now also
   return `labelSites` ({label,file,line,col}, 1-indexed, col on the label text;
   no sites for self-hosted/floating; matrix expressions resolve to the matrix
@@ -47,11 +48,11 @@ scratch dir → bin works, `import('runner-drift')` → 64 exports incl. the new
 ones; action.yml parses, description 101 chars (<125); plain `guard` without
 the flag unchanged.
 
-**Release order (owner, from the phone) — mind the ETARGET race (LESSONS
+**Release order (owner, from the phone), minding the ETARGET race (LESSONS
 2026-08-05):** the CI step `uses: ./` requests npm `runner-drift@1.1.0` (the new
 action default), which 404s until npm publish. So: (1) merge the PR when the
-test/live/guard jobs are green — the "published action" step will fail with
-`ETARGET` until 1.1.0 is on npm, that is expected pre-publish; (2) `npm publish`
+test/live/guard jobs are green. The "published action" step will fail with
+`ETARGET` until 1.1.0 is on npm, which is expected pre-publish; (2) `npm publish`
 from the merged main; (3) wait until `npm view runner-drift@1.1.0 version`
 resolves, then re-run CI → all green; (4) tag `v1.1.0`, move `v1`, cut the
 GitHub release (Marketplace tick needs your 2FA), release notes = the 1.1.0

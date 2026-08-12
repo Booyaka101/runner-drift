@@ -210,12 +210,14 @@ function retirementMessage(s) {
 export function retirementAnnotations(findings) {
   return findings.map((f) => {
     const s = f.status;
-    const kind = f.trigger === 'brownout' ? 'warning' : 'error';
-    const title = s.retired
-      ? `runner-drift: ${s.label} retired ${Math.abs(s.daysToUnsupported)} days ago`
-      : f.trigger === 'brownout'
-        ? `runner-drift: ${s.label} deprecation`
-        : `runner-drift: ${s.label} retires in ${s.daysToUnsupported} days`;
+    let kind = 'error';
+    let title = `runner-drift: ${s.label} retires in ${s.daysToUnsupported} days`;
+    if (s.retired) {
+      title = `runner-drift: ${s.label} retired ${Math.abs(s.daysToUnsupported)} days ago`;
+    } else if (f.trigger === 'brownout') {
+      kind = 'warning';
+      title = `runner-drift: ${s.label} deprecation`;
+    }
     return `::${kind} file=${escapeAnnotation(f.file)},line=${f.line},col=${f.col},title=${escapeAnnotation(title)}::${escapeAnnotation(retirementMessage(s))}`;
   });
 }

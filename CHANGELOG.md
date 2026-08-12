@@ -26,11 +26,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - `macos-14` and `macos-14-arm64` carried an empty brownout list. The
   announcement ([actions/runner-images#13518](https://github.com/actions/runner-images/issues/13518))
-  schedules eight windows (14:00-00:00 UTC): 2026-10-05, -12, -16, -19, -23,
-  -26, -29 and -30 — now in the table. Also added the `macos-14-large` and
-  `macos-14-xlarge` deadline rows from the same issue; they have no
-  runner-images manifest, so they get the countdown and the retirement check
-  but are skipped (not crashed on) by manifest lookups.
+  schedules eight windows (14:00-00:00 UTC) before removal on 2026-11-02:
+  2026-10-05, -12, -16, -19, -23, -26, -29 and -30. Those dates are now in the
+  table. Also added the `macos-14-large` and `macos-14-xlarge` deadline rows
+  from the same issue. They have no runner-images manifest, so they get the
+  countdown and the retirement check, and manifest lookups skip them cleanly.
 
 [1.1.0]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.1.0
 
