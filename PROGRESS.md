@@ -1,16 +1,61 @@
 # PROGRESS — runner-drift
 
-**Status: v1.0.1 SHIPPED.** Published to npm, repo public, CI green on real hosted
-runners, releases cut for v1.0.0 and v1.0.1.
-
-**One step left, and it needs you:** the GitHub Marketplace listing is gated behind
-2FA sudo mode. See "Left for the owner" at the bottom — it is a 30-second job.
+**Status: v1.1.0 BUILT, ready to release.** All 136 tests green, acceptance
+verified end to end, PR opened (see below). Owner publishes from the phone.
 
 - Repo: <https://github.com/Booyaka101/runner-drift>
-- npm: <https://www.npmjs.com/package/runner-drift> (`1.0.0`, `1.0.1`; latest `1.0.1`)
-- Releases: `v1.0.0`, `v1.0.1`; moving tag `v1` → v1.0.1
+- npm: <https://www.npmjs.com/package/runner-drift> (latest published: `1.0.2`)
+- Releases: `v1.0.0`–`v1.0.2`; moving tag `v1` → v1.0.2
 
-Date: 2026-08-05
+Date: 2026-08-12
+
+---
+
+## v1.1.0 (2026-08-12) — `--fail-on-retirement` + macOS-14 brownout data fix
+
+Built per brief; Phase 0 re-verified all three sources live (issues 14254 and
+13518 on runner-images, checkstyle#16793 for the real-world failure shape).
+13518 confirms: eight brownouts 2026-10-05/-12/-16/-19/-23/-26/-29/-30, each
+14:00-00:00 UTC, retirement 2026-11-02, plus the large/xlarge variants.
+
+What changed:
+
+- `src/labels.mjs`: macos-14/-arm64 brownout dates filled in (were `[]`); new
+  `macos-14-large` / `macos-14-xlarge` DEADLINES rows (no LABEL_PATHS — manifest
+  lookups skip them cleanly); new exports `nextBrownout()`, `retirementStatus()`.
+- `src/detect.mjs`: `extractLabelSites()`; `analyseWorkflow`/`detect` now also
+  return `labelSites` ({label,file,line,col}, 1-indexed, col on the label text;
+  no sites for self-hosted/floating; matrix expressions resolve to the matrix
+  value positions).
+- `src/report.mjs`: `retirementFindings` / `retirementAnnotations`
+  (`::error file=,line=,col=`; `::warning` when only a brownout is inside the
+  threshold) / `retirementSummaryMarkdown`.
+- `src/cli.mjs`: `guard --fail-on-retirement=<days>`; runs before the
+  ImageVersion skip so a plain lint job works; combined exit with drift; the
+  retirement block rides into `--json`; flag absent = byte-identical to 1.0.2.
+- `action.yml`: `fail-on-retirement` input; `version` default 1.1.0.
+- New fixture `test/fixtures/workflows-retirement/pinned.yml` (macos-14 at
+  12:14, ubuntu-22.04 at 30:14) in its OWN dir so the existing detect fixture
+  counts stay valid. One existing test updated deliberately: report.test.mjs
+  asserted the stale "macos-14 has no brownouts" data this release fixes.
+
+VERIFIED (all run for real, 2026-08-12): 136/136 tests; worked example exact
+(=60 → exit 1, one annotation at pinned.yml:12:14, 54/82 days; =10 → exit 0
+clean; =250 → both labels, both stderr lines); `--help` shows the flag;
+`--version` → 1.1.0; `npm pack` → 17 files; tarball installed into a clean
+scratch dir → bin works, `import('runner-drift')` → 64 exports incl. the new
+ones; action.yml parses, description 101 chars (<125); plain `guard` without
+the flag unchanged.
+
+**Release order (owner, from the phone) — mind the ETARGET race (LESSONS
+2026-08-05):** the CI step `uses: ./` requests npm `runner-drift@1.1.0` (the new
+action default), which 404s until npm publish. So: (1) merge the PR when the
+test/live/guard jobs are green — the "published action" step will fail with
+`ETARGET` until 1.1.0 is on npm, that is expected pre-publish; (2) `npm publish`
+from the merged main; (3) wait until `npm view runner-drift@1.1.0 version`
+resolves, then re-run CI → all green; (4) tag `v1.1.0`, move `v1`, cut the
+GitHub release (Marketplace tick needs your 2FA), release notes = the 1.1.0
+CHANGELOG entry.
 
 ---
 

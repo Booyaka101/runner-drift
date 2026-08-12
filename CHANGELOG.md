@@ -4,6 +4,36 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] — 2026-08-12
+
+### Added
+
+- **`--fail-on-retirement <days>`** on `guard`: scans the workflow files for
+  pinned `runs-on:` labels and fails the job (exit 1) when any of them retires,
+  or hits a scheduled brownout, within N days. Each hit is a
+  `::error file=,line=,col=` annotation pointing at the exact `runs-on` line
+  (a `::warning` when only a brownout falls inside the threshold), plus a
+  retirement table in the step summary and a `retirement` block in `--json`.
+  The check needs no lock file and no hosted runner, so it works in a plain
+  lint job; a label already past its retirement date always fails, whatever
+  the threshold. Without the flag, `guard` behaves exactly as in 1.0.2.
+- `nextBrownout(label, now)` and `retirementStatus(label, now)` exported from
+  the package, and `labelSites` ({label, file, line, col} per `runs-on`
+  occurrence) on `detect()` / `analyseWorkflow()`.
+- Action input `fail-on-retirement`, passed straight through to the flag.
+
+### Fixed
+
+- `macos-14` and `macos-14-arm64` carried an empty brownout list. The
+  announcement ([actions/runner-images#13518](https://github.com/actions/runner-images/issues/13518))
+  schedules eight windows (14:00-00:00 UTC): 2026-10-05, -12, -16, -19, -23,
+  -26, -29 and -30 — now in the table. Also added the `macos-14-large` and
+  `macos-14-xlarge` deadline rows from the same issue; they have no
+  runner-images manifest, so they get the countdown and the retirement check
+  but are skipped (not crashed on) by manifest lookups.
+
+[1.1.0]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.1.0
+
 ## [1.0.2] — 2026-08-05
 
 ### Fixed

@@ -1,0 +1,33 @@
+name: pinned
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  macos:
+    name: macOS build
+    timeout-minutes: 30
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v5
+      - run: python --version
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: node --version
+
+  ubuntu:
+    name: Ubuntu build
+    timeout-minutes: 30
+    env:
+      CI: 'true'
+    permissions: {}
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - run: python --version

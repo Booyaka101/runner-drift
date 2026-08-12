@@ -9,7 +9,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { COMMAND_ALIASES, SETUP_ACTION_ALIASES, canonicalTool } from './tools.mjs';
-import { normaliseLabel } from './labels.mjs';
+import { isFloating, normaliseLabel } from './labels.mjs';
 
 const WORKFLOW_EXT = /\.ya?ml$/i;
 const LABEL_SHAPE = /^(ubuntu|windows|macos)-[a-z0-9.-]+$/i;
@@ -136,6 +136,84 @@ export function extractLabels(text) {
   return [...labels];
 }
 
+/**
+ * Where each `runs-on` label sits in the file: {label, file, line, col},
+ * line and col both 1-indexed, col pointing at the label text itself so
+ * `::error file=,line=,col=` annotations land on it. Self-hosted and
+ * floating labels get no site — there is nothing to retire at a fixed date.
+ * For `${{ matrix.os }}` the sites are the label-shaped scalars in the file.
+ */
+export function extractLabelSites(text, file = null) {
+  const lines = String(text ?? '').split(/\r?\n/);
+  const sites = [];
+  const seen = new Set();
+  let hasExpression = false;
+
+  const add = (rawItem, lineNo, col) => {
+    const label = normaliseLabel(rawItem);
+    if (!label || label === SELF_HOSTED || isFloating(label)) return;
+    const key = `${label}@${lineNo}:${col}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    sites.push({ label, file, line: lineNo, col });
+  };
+
+  // Column of the label text within a raw scalar that may be quoted.
+  const colOf = (line, start, raw) => {
+    const lead = raw.length - raw.trimStart().length;
+    const quoted = /^['"]/.test(raw.trim());
+    return start + lead + (quoted ? 1 : 0) + 1;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^(\s*)runs-on:\s*(.*)$/);
+    if (!m) continue;
+    const baseIndent = m[1].length;
+    const value = m[2].trim();
+    const valueStart = lines[i].length - m[2].length;
+
+    if (!value) {
+      for (let j = i + 1; j < lines.length; j++) {
+        const l = lines[j];
+        if (l.trim() === '') continue;
+        if (indentOf(l) <= baseIndent) break;
+        const itemMatch = l.match(/^(\s*-\s*)(.*)$/);
+        const item = itemMatch ? itemMatch[2] : l.trim();
+        if (item.includes('${{')) hasExpression = true;
+        else add(item, j + 1, colOf(l, itemMatch ? itemMatch[1].length : indentOf(l), item));
+        i = j;
+      }
+      continue;
+    }
+
+    if (value.startsWith('[')) {
+      let offset = valueStart + lines[i].slice(valueStart).indexOf('[') + 1;
+      for (const part of value.replace(/^\[|\]$/g, '').split(',')) {
+        if (part.includes('${{')) hasExpression = true;
+        else add(part, i + 1, colOf(lines[i], offset, part));
+        offset += part.length + 1;
+      }
+      continue;
+    }
+
+    if (value.includes('${{')) {
+      hasExpression = true;
+      continue;
+    }
+    add(value, i + 1, colOf(lines[i], valueStart, m[2]));
+  }
+
+  if (hasExpression) {
+    for (let i = 0; i < lines.length; i++) {
+      for (const tok of lines[i].matchAll(/[A-Za-z][A-Za-z0-9.-]*/g)) {
+        if (LABEL_SHAPE.test(tok[0])) add(tok[0], i + 1, tok.index + 1);
+      }
+    }
+  }
+
+  return sites;
+}
+
 /** `uses: actions/setup-node@v5` -> Node.js (any version suffix; only the owner/repo matters) */
 export function extractSetupActions(text) {
   const tools = new Set();
@@ -149,13 +227,14 @@ export function extractSetupActions(text) {
 /** Analyse one workflow document. */
 export function analyseWorkflow(text, file = null) {
   const labels = extractLabels(text);
+  const labelSites = extractLabelSites(text, file);
   const commands = new Set();
   for (const script of extractRunScripts(text)) {
     for (const c of commandsInScript(script)) commands.add(c);
   }
   const tools = new Set([...commands].map((c) => canonicalTool(c)));
   for (const t of extractSetupActions(text)) tools.add(t);
-  return { file, labels, commands: [...commands].sort(), tools: [...tools].sort() };
+  return { file, labels, labelSites, commands: [...commands].sort(), tools: [...tools].sort() };
 }
 
 async function listWorkflowFiles(dir) {
@@ -174,8 +253,8 @@ async function listWorkflowFiles(dir) {
 
 /**
  * Scan a directory of workflows (or a single workflow file).
- * @returns {{dir:string, files:string[], labels:string[], tools:string[],
- *            perFile:object[], missing:boolean}}
+ * @returns {{dir:string, files:string[], labels:string[], labelSites:object[],
+ *            tools:string[], perFile:object[], missing:boolean}}
  */
 export async function detect(workflowsPath) {
   const target = workflowsPath || path.join('.github', 'workflows');
@@ -191,18 +270,20 @@ export async function detect(workflowsPath) {
   } else {
     files = await listWorkflowFiles(target);
     if (files === null) {
-      return { dir: target, files: [], labels: [], tools: [], perFile: [], missing: true };
+      return { dir: target, files: [], labels: [], labelSites: [], tools: [], perFile: [], missing: true };
     }
   }
 
   const perFile = [];
   const labels = new Set();
+  const labelSites = [];
   const tools = new Set();
   for (const f of files) {
     const text = await readFile(f, 'utf8');
     const r = analyseWorkflow(text, f);
     perFile.push(r);
     for (const l of r.labels) labels.add(l);
+    labelSites.push(...r.labelSites);
     for (const t of r.tools) tools.add(t);
   }
 
@@ -210,6 +291,7 @@ export async function detect(workflowsPath) {
     dir: target,
     files,
     labels: [...labels].sort(),
+    labelSites,
     tools: [...tools].sort(),
     perFile,
     missing: false,

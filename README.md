@@ -134,6 +134,46 @@ runner-drift plan --from macos-14 --to macos-15 --tools python,node,dotnet
 runner-drift plan --from ubuntu-22.04 --to ubuntu-26.04 --json
 ```
 
+### 4. Fail before the brownout
+
+Deprecated images get scheduled brownouts before removal: `macos-14` jobs fail
+14:00-00:00 UTC on eight dates starting 2026-10-05, then the label disappears on
+2026-11-02 ([#13518](https://github.com/actions/runner-images/issues/13518));
+`ubuntu-22.04` follows the same script from 2027-03-23
+([#14254](https://github.com/actions/runner-images/issues/14254)). The first
+brownout looks exactly like flaky CI, and by then the fix is urgent.
+
+`guard --fail-on-retirement <days>` scans your workflow files for pinned
+`runs-on:` labels and fails while the migration is still routine. It needs no
+lock file and no hosted runner, so it works as a plain lint job:
+
+```yaml
+  runner-retirement:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Booyaka101/runner-drift@v1
+        with:
+          fail-on-retirement: 60   # or: npx runner-drift guard --fail-on-retirement 60
+```
+
+Each hit is a file annotation on the exact `runs-on:` line, with the dates, the
+announced migration targets and the source issue:
+
+```
+::error file=.github/workflows/release.yml,line=12,col=14,title=runner-drift: macos-14 retires in 82 days::macos-14 is fully unsupported on 2026-11-02 (82 days); next brownout 2026-10-05 (54 days). Migrate to macos-15, macos-26, macos-latest. See https://github.com/actions/runner-images/issues/13518
+runner-drift: macos-14 is fully unsupported on 2026-11-02 (82 days) and --fail-on-retirement 60 is set.
+```
+
+When only a brownout falls inside the threshold the annotation is a `::warning`
+(`runner-drift: <label> deprecation`), but the job still fails: those are the
+dates your builds break. The step summary gets a table (Label, Where, Next
+brownout, Fully unsupported, Migrate to, Source), `--json` gets a `retirement`
+block, and a label already past its date always fails, whatever the threshold.
+`ubuntu-latest` and friends float past retirements, so they are never flagged;
+neither is `self-hosted`. `runs-on: ${{ matrix.os }}` is resolved from the
+matrix values in the same file.
+
 ## Configuration
 
 ### CLI
@@ -146,22 +186,25 @@ runner-drift plan --from ubuntu-22.04 --to ubuntu-26.04 --json
 | `--label <label>` | `init` | detected | Explicit runner label |
 | `--from` / `--to` | `plan` | — | Runner labels to compare (required) |
 | `--fail-on <level>` | `guard` | never fail | `major`, `minor` or `any` |
+| `--fail-on-retirement <days>` | `guard` | off | Fail when a pinned label retires or browns out within N days |
 | `--json` | all | off | Machine-readable output |
 | `--no-summary` | `guard` | on | Skip the `$GITHUB_STEP_SUMMARY` write |
 | `--no-update-lock` | `guard` | on | Report drift but leave the lock file untouched |
 
 Exit codes: `0` success (including "drift found" without `--fail-on`), `1` drift at
-or above the `--fail-on` threshold, `2` usage / configuration error.
+or above the `--fail-on` threshold or a label inside the `--fail-on-retirement`
+window, `2` usage / configuration error.
 
 ### Action inputs
 
 | Input | Default | Meaning |
 | --- | --- | --- |
 | `fail-on` | `''` | `major`, `minor`, `any`; empty means report only |
+| `fail-on-retirement` | `''` | Days ahead to fail on a label retirement or brownout; empty disables |
 | `tools` | `''` | Comma-separated override |
 | `lock-file` | `runner-lock.json` | Lock file path |
 | `workflows` | `.github/workflows` | Scanned when there is no lock yet |
-| `version` | `1.0.1` | npm version of `runner-drift` to run |
+| `version` | `1.1.0` | npm version of `runner-drift` to run |
 | `github-token` | `${{ github.token }}` | Rate limit only |
 
 ### `runner-lock.json`
@@ -192,9 +235,11 @@ mistaken for a version change.
 `ubuntu-22.04`, `ubuntu-24.04`, `ubuntu-26.04` (+ `-arm`), `windows-2022`,
 `windows-2025`, `macos-14`, `macos-15`, `macos-26` (+ `-arm64`).
 
-Deadline data currently covers `ubuntu-22.04` (+ arm) and `macos-14` — the two
-images with an announced retirement date. Every other label diffs fine, it just
-has no countdown.
+Deadline data currently covers `ubuntu-22.04` (+ arm) and `macos-14` (+ arm64,
+`-large`, `-xlarge`) — the images with an announced retirement date. The
+large/xlarge labels have no public manifest, so they get the retirement
+countdown and `--fail-on-retirement`, not the tool diff. Every other label
+diffs fine, it just has no countdown.
 
 ## Limitations
 
@@ -226,7 +271,7 @@ has no countdown.
 ```bash
 git clone https://github.com/Booyaka101/runner-drift
 cd runner-drift
-node --test          # 101 tests, fully offline against real downloaded manifest fixtures
+node --test          # 136 tests, fully offline against real downloaded manifest fixtures
 ```
 
 Tests run against four **real** manifest snapshots in `test/fixtures/`
