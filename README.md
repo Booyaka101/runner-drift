@@ -278,12 +278,6 @@ Tests run against four **real** manifest snapshots in `test/fixtures/`
 (`Ubuntu2204` at two different image versions, `Ubuntu2404`, `macos-15`), so the
 golden `plan` output is deterministic while the live path re-fetches.
 
-## Where to find it
-
-- npm — <https://www.npmjs.com/package/runner-drift>
-- GitHub Marketplace — <https://github.com/marketplace/actions/runner-drift>
-- Write-up — [You can't pin a GitHub Actions runner image, but you can find out exactly what changed](https://dev.to/booyaka101/you-cant-pin-a-github-actions-runner-image-but-you-can-find-out-exactly-what-changed-58hm)
-
 ## License
 
 MIT — see [LICENSE](LICENSE).
