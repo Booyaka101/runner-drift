@@ -207,8 +207,7 @@ test('without --fail-on-retirement, retiring labels change nothing', async () =>
   const lockFile = path.join(dir, 'runner-lock.json');
   const workflows = path.join(FIXTURES, 'workflows-retirement');
   try {
-    // The fixture pins macos-14 (retires 2026-11-02); with the flag absent the
-    // run must look exactly like 1.0.2: baseline, exit 0, no retirement output.
+    // The fixture pins macos-14, which retires 2026-11-02.
     const r = await guard({ tools: 'node', 'lock-file': lockFile, workflows });
     assert.equal(r.code, EXIT_OK);
     assert.match(r.stdout, /baseline recorded/);

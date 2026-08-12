@@ -74,95 +74,23 @@ export function commandsInScript(script) {
   return [...found];
 }
 
-/** Pull `runs-on:` labels (inline scalar, inline flow list, block list, matrix refs). */
-export function extractLabels(text) {
-  const lines = String(text ?? '').split(/\r?\n/);
-  const labels = new Set();
-  const expressions = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^(\s*)runs-on:\s*(.*)$/);
-    if (!m) continue;
-    const baseIndent = m[1].length;
-    let value = m[2].trim();
-
-    if (!value) {
-      for (let j = i + 1; j < lines.length; j++) {
-        const l = lines[j];
-        if (l.trim() === '') continue;
-        if (indentOf(l) <= baseIndent) break;
-        const item = l.trim().replace(/^-\s*/, '');
-        if (item.includes('${{')) expressions.push(item);
-        else {
-          const n = normaliseLabel(item);
-          if (n) labels.add(n);
-        }
-        i = j;
-      }
-      continue;
-    }
-
-    if (value.startsWith('[')) {
-      for (const part of value.replace(/^\[|\]$/g, '').split(',')) {
-        if (part.includes('${{')) expressions.push(part.trim());
-        else {
-          const n = normaliseLabel(part);
-          if (n) labels.add(n);
-        }
-      }
-      continue;
-    }
-
-    if (value.includes('${{')) {
-      expressions.push(value);
-      continue;
-    }
-    const n = normaliseLabel(value);
-    if (n) labels.add(n);
-  }
-
-  // `runs-on: ${{ matrix.os }}` -> harvest label-shaped scalars from the file.
-  if (expressions.length) {
-    for (const line of lines) {
-      for (const tok of line.match(/[A-Za-z][A-Za-z0-9.-]*/g) ?? []) {
-        if (LABEL_SHAPE.test(tok)) labels.add(tok.toLowerCase());
-      }
-      if (/(^|\s)self-hosted(\s|$|,|\]|')/.test(line) && /runs-on|matrix|os:|- /.test(line)) {
-        labels.add(SELF_HOSTED);
-      }
-    }
-  }
-
-  return [...labels];
+/** 1-indexed column of the label inside a raw scalar that may be padded or quoted. */
+function labelColumn(start, raw) {
+  const lead = raw.length - raw.trimStart().length;
+  return start + lead + (/^['"]/.test(raw.trim()) ? 1 : 0) + 1;
 }
 
 /**
- * Where each `runs-on` label sits in the file: {label, file, line, col},
- * line and col both 1-indexed, col pointing at the label text itself so
- * `::error file=,line=,col=` annotations land on it. Self-hosted and
- * floating labels get no site — there is nothing to retire at a fixed date.
- * For `${{ matrix.os }}` the sites are the label-shaped scalars in the file.
+ * Every `runs-on:` value in a document, positioned. `expression` reports
+ * whether any value was a `${{ … }}` reference, which is what makes the
+ * matrix fallback below kick in.
  */
-export function extractLabelSites(text, file = null) {
-  const lines = String(text ?? '').split(/\r?\n/);
-  const sites = [];
-  const seen = new Set();
-  let hasExpression = false;
-
-  const add = (rawItem, lineNo, col) => {
-    const label = normaliseLabel(rawItem);
-    if (!label || label === SELF_HOSTED || isFloating(label)) return;
-    const key = `${label}@${lineNo}:${col}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    sites.push({ label, file, line: lineNo, col });
-  };
-
-  // Column of the label text within a raw scalar that may be quoted.
-  const colOf = (line, start, raw) => {
-    const lead = raw.length - raw.trimStart().length;
-    const quoted = /^['"]/.test(raw.trim());
-    return start + lead + (quoted ? 1 : 0) + 1;
+function scanRunsOn(lines) {
+  const found = [];
+  let expression = false;
+  const push = (raw, line, col) => {
+    const label = normaliseLabel(raw);
+    if (label) found.push({ label, line, col });
   };
 
   for (let i = 0; i < lines.length; i++) {
@@ -177,40 +105,75 @@ export function extractLabelSites(text, file = null) {
         const l = lines[j];
         if (l.trim() === '') continue;
         if (indentOf(l) <= baseIndent) break;
-        const itemMatch = l.match(/^(\s*-\s*)(.*)$/);
-        const item = itemMatch ? itemMatch[2] : l.trim();
-        if (item.includes('${{')) hasExpression = true;
-        else add(item, j + 1, colOf(l, itemMatch ? itemMatch[1].length : indentOf(l), item));
+        const dash = l.match(/^(\s*-\s*)(.*)$/);
+        const item = dash ? dash[2] : l.trim();
+        if (item.includes('${{')) expression = true;
+        else push(item, j + 1, labelColumn(dash ? dash[1].length : indentOf(l), item));
         i = j;
       }
-      continue;
-    }
-
-    if (value.startsWith('[')) {
+    } else if (value.startsWith('[')) {
       let offset = valueStart + lines[i].slice(valueStart).indexOf('[') + 1;
       for (const part of value.replace(/^\[|\]$/g, '').split(',')) {
-        if (part.includes('${{')) hasExpression = true;
-        else add(part, i + 1, colOf(lines[i], offset, part));
+        if (part.includes('${{')) expression = true;
+        else push(part, i + 1, labelColumn(offset, part));
         offset += part.length + 1;
       }
-      continue;
+    } else if (value.includes('${{')) {
+      expression = true;
+    } else {
+      push(value, i + 1, labelColumn(valueStart, m[2]));
     }
-
-    if (value.includes('${{')) {
-      hasExpression = true;
-      continue;
-    }
-    add(value, i + 1, colOf(lines[i], valueStart, m[2]));
   }
+  return { found, expression };
+}
 
-  if (hasExpression) {
-    for (let i = 0; i < lines.length; i++) {
-      for (const tok of lines[i].matchAll(/[A-Za-z][A-Za-z0-9.-]*/g)) {
-        if (LABEL_SHAPE.test(tok[0])) add(tok[0], i + 1, tok.index + 1);
+/** `runs-on: ${{ matrix.os }}` -> the label-shaped scalars elsewhere in the file. */
+function matrixLabels(lines) {
+  const found = [];
+  for (let i = 0; i < lines.length; i++) {
+    for (const tok of lines[i].matchAll(/[A-Za-z][A-Za-z0-9.-]*/g)) {
+      if (LABEL_SHAPE.test(tok[0])) {
+        found.push({ label: tok[0].toLowerCase(), line: i + 1, col: tok.index + 1 });
       }
     }
   }
+  return found;
+}
 
+/** Pull `runs-on:` labels (inline scalar, inline flow list, block list, matrix refs). */
+export function extractLabels(text) {
+  const lines = String(text ?? '').split(/\r?\n/);
+  const { found, expression } = scanRunsOn(lines);
+  const labels = new Set(found.map((f) => f.label));
+  if (expression) {
+    for (const { label } of matrixLabels(lines)) labels.add(label);
+    for (const line of lines) {
+      if (/(^|\s)self-hosted(\s|$|,|\]|')/.test(line) && /runs-on|matrix|os:|- /.test(line)) {
+        labels.add(SELF_HOSTED);
+      }
+    }
+  }
+  return [...labels];
+}
+
+/**
+ * Where each `runs-on` label sits: `{label, file, line, col}` per occurrence,
+ * 1-indexed, `col` on the label text so a `file=,line=,col=` annotation lands
+ * on it. Self-hosted and floating labels are skipped, having no fixed date to
+ * retire on.
+ */
+export function extractLabelSites(text, file = null) {
+  const lines = String(text ?? '').split(/\r?\n/);
+  const { found, expression } = scanRunsOn(lines);
+  const seen = new Set();
+  const sites = [];
+  for (const { label, line, col } of expression ? [...found, ...matrixLabels(lines)] : found) {
+    if (label === SELF_HOSTED || isFloating(label)) continue;
+    const key = `${label}@${line}:${col}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    sites.push({ label, file, line, col });
+  }
   return sites;
 }
 

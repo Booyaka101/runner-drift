@@ -139,6 +139,48 @@ function out(stream, line) {
   stream.write(`${line}\n`);
 }
 
+/**
+ * `--fail-on-retirement`: every pinned label that retires or browns out inside
+ * the window. Reads the workflow files alone, so it works in a lint job with no
+ * lock file and no hosted runner. Returns null on a bad value, already reported.
+ */
+async function checkRetirement(opts, io, now) {
+  const raw = String(opts['fail-on-retirement']);
+  if (!/^\d+$/.test(raw)) {
+    out(io.stderr, `--fail-on-retirement needs a whole number of days >= 0 (got "${raw}")`);
+    return null;
+  }
+  const days = Number(raw);
+  const scanned = await detect(opts.workflows ?? path.join('.github', 'workflows'));
+  if (scanned.missing) {
+    const msg = `No workflow directory at ${scanned.dir} — no pinned labels to check for retirement.`;
+    out(io.stdout, notice(msg));
+    out(io.stdout, msg);
+    return { days, findings: [] };
+  }
+  const findings = retirementFindings(scanned.labelSites, { now, days });
+  for (const line of retirementAnnotations(findings)) out(io.stdout, line);
+  if (findings.length && opts.summary) {
+    await writeStepSummary(retirementSummaryMarkdown(findings));
+  }
+  return { days, findings };
+}
+
+/** One stderr line per retiring label, whatever else the run reported. */
+function reportRetirement(io, { days, findings }) {
+  const seen = new Set();
+  for (const { status: s } of findings) {
+    if (seen.has(s.label)) continue;
+    seen.add(s.label);
+    out(
+      io.stderr,
+      s.retired
+        ? `runner-drift: ${s.label} has been fully unsupported since ${s.fullyUnsupported} (retired ${Math.abs(s.daysToUnsupported)} days ago) and --fail-on-retirement ${days} is set.`
+        : `runner-drift: ${s.label} is fully unsupported on ${s.fullyUnsupported} (${s.daysToUnsupported} days) and --fail-on-retirement ${days} is set.`,
+    );
+  }
+}
+
 /* -------------------------------------------------------------------- init */
 
 export async function runInit(opts, io = process) {
@@ -248,46 +290,14 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     return EXIT_USAGE;
   }
 
-  // Retirement check first: it needs only the workflow files, so it works in a
-  // plain lint job on any runner, hosted or not.
-  let retireDays = null;
-  let retireFindings = [];
+  // Retirement runs before the drift logic: it needs only the workflow files,
+  // so a lint job on any runner gets the deadline warning.
+  let retirement = null;
   if (opts['fail-on-retirement'] !== undefined) {
-    const raw = String(opts['fail-on-retirement']);
-    if (!/^\d+$/.test(raw)) {
-      out(io.stderr, `--fail-on-retirement needs a whole number of days >= 0 (got "${raw}")`);
-      return EXIT_USAGE;
-    }
-    retireDays = Number(raw);
-    const now = deps.now ?? new Date();
-    const scanned = await detect(opts.workflows ?? path.join('.github', 'workflows'));
-    if (scanned.missing) {
-      const msg = `No workflow directory at ${scanned.dir} — no pinned labels to check for retirement.`;
-      out(io.stdout, notice(msg));
-      out(io.stdout, msg);
-    } else {
-      retireFindings = retirementFindings(scanned.labelSites, { now, days: retireDays });
-      for (const line of retirementAnnotations(retireFindings)) out(io.stdout, line);
-      if (retireFindings.length && opts.summary) {
-        await writeStepSummary(retirementSummaryMarkdown(retireFindings));
-      }
-    }
+    retirement = await checkRetirement(opts, io, deps.now ?? new Date());
+    if (!retirement) return EXIT_USAGE;
   }
-  const retirement = retireDays === null ? null : { days: retireDays, findings: retireFindings };
-  const reportRetirementFailure = () => {
-    const seen = new Set();
-    for (const f of retireFindings) {
-      const s = f.status;
-      if (seen.has(s.label)) continue;
-      seen.add(s.label);
-      out(
-        io.stderr,
-        s.retired
-          ? `runner-drift: ${s.label} has been fully unsupported since ${s.fullyUnsupported} (retired ${Math.abs(s.daysToUnsupported)} days ago) and --fail-on-retirement ${retireDays} is set.`
-          : `runner-drift: ${s.label} is fully unsupported on ${s.fullyUnsupported} (${s.daysToUnsupported} days) and --fail-on-retirement ${retireDays} is set.`,
-      );
-    }
-  };
+  const retiring = retirement?.findings.length ? retirement : null;
 
   const imageVersion = env.ImageVersion ?? env.IMAGE_VERSION ?? null;
   const imageOS = env.ImageOS ?? env.IMAGE_OS ?? null;
@@ -298,8 +308,8 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
       '(self-hosted runner or local shell). runner-drift guard has nothing to compare; skipping.';
     out(io.stdout, notice(msg));
     out(io.stdout, msg);
-    if (retireFindings.length) {
-      reportRetirementFailure();
+    if (retiring) {
+      reportRetirement(io, retiring);
       return EXIT_DRIFT;
     }
     return EXIT_OK;
@@ -316,8 +326,8 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     const msg = `Unknown runner label (ImageOS="${imageOS ?? '(unset)'}") — skipping. Known: ${knownLabels().join(', ')}`;
     out(io.stdout, `::warning title=runner-drift::${msg}`);
     out(io.stdout, msg);
-    if (retireFindings.length) {
-      reportRetirementFailure();
+    if (retiring) {
+      reportRetirement(io, retiring);
       return EXIT_DRIFT;
     }
     return EXIT_OK;
@@ -418,8 +428,8 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
       for (const [t, v] of manifestOnly) out(io.stdout, `  ${t}: ${v.versions.join(', ')} (from manifest)`);
       out(io.stdout, `Wrote ${lockFile}. Commit it so the next image bump can be diffed.`);
     }
-    if (retireFindings.length) {
-      reportRetirementFailure();
+    if (retiring) {
+      reportRetirement(io, retiring);
       return EXIT_DRIFT;
     }
     return EXIT_OK;
@@ -505,8 +515,8 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   if (driftFail) {
     out(io.stderr, `runner-drift: ${maxSeverity(diffs).toUpperCase()} drift detected and --fail-on ${failOn} is set.`);
   }
-  if (retireFindings.length) reportRetirementFailure();
-  return driftFail || retireFindings.length ? EXIT_DRIFT : EXIT_OK;
+  if (retiring) reportRetirement(io, retiring);
+  return driftFail || retiring ? EXIT_DRIFT : EXIT_OK;
 }
 
 /* -------------------------------------------------------------------- plan */
