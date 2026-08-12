@@ -15,13 +15,14 @@ test('deadline lines cite the source issue', () => {
   assert.ok(lines.some((l) => l.includes('brownout windows (14:00-00:00 UTC)')));
 });
 
-test('macos-14 has its own deadline and no brownouts', () => {
+test('macos-14 has its own deadline and brownout schedule', () => {
   const lines = deadlineLines('macos-14', NOW);
   assert.equal(
     lines[0],
-    'macos-14 is fully unsupported on 2026-11-02 (source: actions/runner-images#13518)',
+    'macos-14 is fully unsupported on 2026-11-02; brownouts begin 2026-10-05 (source: actions/runner-images#13518)',
   );
   assert.ok(lines.some((l) => l.includes('issues/13518')));
+  assert.ok(lines.some((l) => l.includes('brownout windows (14:00-00:00 UTC): 2026-10-05')));
 });
 
 test('a label with no announced deadline returns null', () => {

@@ -4,6 +4,7 @@ import path from 'node:path';
 import {
   analyseWorkflow,
   extractLabels,
+  extractLabelSites,
   extractRunScripts,
   commandsInScript,
   detect,
@@ -104,4 +105,70 @@ test('an empty or non-workflow document yields nothing', () => {
   const r = analyseWorkflow('');
   assert.deepEqual(r.labels, []);
   assert.deepEqual(r.tools, []);
+});
+
+test('labelSites: an inline scalar points at the label text, 1-indexed', () => {
+  const sites = extractLabelSites('jobs:\n  a:\n    runs-on: ubuntu-22.04\n');
+  assert.deepEqual(sites, [{ label: 'ubuntu-22.04', file: null, line: 3, col: 14 }]);
+});
+
+test('labelSites: a quoted scalar points inside the quotes', () => {
+  const sites = extractLabelSites("jobs:\n  a:\n    runs-on: 'macos-14'\n");
+  assert.deepEqual(sites, [{ label: 'macos-14', file: null, line: 3, col: 15 }]);
+});
+
+test('labelSites: flow-sequence items get their own columns, self-hosted none', () => {
+  const sites = extractLabelSites('    runs-on: [self-hosted, linux, x64]\n');
+  assert.deepEqual(sites, [
+    { label: 'linux', file: null, line: 1, col: 28 },
+    { label: 'x64', file: null, line: 1, col: 35 },
+  ]);
+});
+
+test('labelSites: block-sequence items carry their own line and column', () => {
+  const y = 'jobs:\n  a:\n    runs-on:\n      - self-hosted\n      - macos-14\n    steps: []\n';
+  assert.deepEqual(extractLabelSites(y), [{ label: 'macos-14', file: null, line: 5, col: 9 }]);
+});
+
+test('labelSites: ${{ matrix.os }} resolves to the matrix value positions', () => {
+  const y = [
+    'jobs:',
+    '  a:',
+    '    strategy:',
+    '      matrix:',
+    '        os: [ubuntu-22.04, macos-14]',
+    '    runs-on: ${{ matrix.os }}',
+  ].join('\n');
+  assert.deepEqual(extractLabelSites(y), [
+    { label: 'ubuntu-22.04', file: null, line: 5, col: 14 },
+    { label: 'macos-14', file: null, line: 5, col: 28 },
+  ]);
+});
+
+test('labelSites: floating labels are never a site', () => {
+  assert.deepEqual(extractLabelSites('    runs-on: ubuntu-latest\n'), []);
+});
+
+test('detect() aggregates labelSites with the file recorded', async () => {
+  const d = await detect(path.join(FIXTURES, 'workflows'));
+  const site = d.labelSites.find((s) => s.label === 'ubuntu-22.04');
+  assert.ok(site, 'ubuntu-22.04 site found');
+  assert.equal(path.basename(site.file), 'build.yml');
+  assert.equal(site.line, 10);
+  assert.equal(site.col, 14);
+  assert.ok(!d.labelSites.some((s) => s.label === SELF_HOSTED));
+});
+
+test('detect() on the retirement fixture pins macos-14 and ubuntu-22.04 at known lines', async () => {
+  const d = await detect(path.join(FIXTURES, 'workflows-retirement'));
+  const at = (label) => d.labelSites.find((s) => s.label === label);
+  assert.deepEqual(
+    { line: at('macos-14').line, col: at('macos-14').col },
+    { line: 12, col: 14 },
+  );
+  assert.deepEqual(
+    { line: at('ubuntu-22.04').line, col: at('ubuntu-22.04').col },
+    { line: 30, col: 14 },
+  );
+  assert.ok(!d.labelSites.some((s) => s.label === 'ubuntu-latest'), 'floating label has no site');
 });

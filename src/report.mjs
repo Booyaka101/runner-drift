@@ -4,7 +4,7 @@
  */
 
 import { appendFile } from 'node:fs/promises';
-import { deadlineFor } from './labels.mjs';
+import { deadlineFor, retirementStatus } from './labels.mjs';
 
 const MS_PER_DAY = 86_400_000;
 
@@ -173,6 +173,72 @@ export function annotations(diffs, attribution = {}, label = '') {
 
 export function notice(message) {
   return `::notice title=runner-drift::${escapeAnnotation(message)}`;
+}
+
+/**
+ * One finding per label site that retires, browns out or is already retired
+ * within `days`. A retired label always fires, whatever the threshold.
+ */
+export function retirementFindings(labelSites, { now = new Date(), days } = {}) {
+  const findings = [];
+  for (const site of labelSites ?? []) {
+    const status = retirementStatus(site.label, now);
+    if (!status) continue;
+    const retiring = status.retired || status.daysToUnsupported <= days;
+    const brownoutSoon = status.daysToBrownout !== null && status.daysToBrownout <= days;
+    if (!retiring && !brownoutSoon) continue;
+    findings.push({ ...site, status, trigger: retiring ? 'retirement' : 'brownout' });
+  }
+  return findings;
+}
+
+function retirementMessage(s) {
+  const migrate = `Migrate to ${s.migrateTo.join(', ')}.`;
+  if (s.retired) {
+    return `${s.label} retired ${Math.abs(s.daysToUnsupported)} days ago — fully unsupported since ${s.fullyUnsupported}. ${migrate} See ${s.source}`;
+  }
+  const brownout = s.nextBrownout
+    ? `; next brownout ${s.nextBrownout} (${s.daysToBrownout} days)`
+    : '';
+  return `${s.label} is fully unsupported on ${s.fullyUnsupported} (${s.daysToUnsupported} days)${brownout}. ${migrate} See ${s.source}`;
+}
+
+/**
+ * `::error file=,line=,col=` lines pointing at each pinned label. A brownout
+ * inside the threshold with retirement still beyond it is a ::warning.
+ */
+export function retirementAnnotations(findings) {
+  return findings.map((f) => {
+    const s = f.status;
+    const kind = f.trigger === 'brownout' ? 'warning' : 'error';
+    const title = s.retired
+      ? `runner-drift: ${s.label} retired ${Math.abs(s.daysToUnsupported)} days ago`
+      : f.trigger === 'brownout'
+        ? `runner-drift: ${s.label} deprecation`
+        : `runner-drift: ${s.label} retires in ${s.daysToUnsupported} days`;
+    return `::${kind} file=${escapeAnnotation(f.file)},line=${f.line},col=${f.col},title=${escapeAnnotation(title)}::${escapeAnnotation(retirementMessage(s))}`;
+  });
+}
+
+/** Step-summary table for retirement findings. */
+export function retirementSummaryMarkdown(findings) {
+  const lines = [];
+  lines.push('## runner-drift — retirement');
+  lines.push('');
+  lines.push('| Label | Where | Next brownout | Fully unsupported | Migrate to | Source |');
+  lines.push('| --- | --- | --- | --- | --- | --- |');
+  for (const f of findings) {
+    const s = f.status;
+    const brownout = s.nextBrownout ? `${s.nextBrownout} (${s.daysToBrownout} days)` : '—';
+    const unsupported = s.retired
+      ? `${s.fullyUnsupported} (retired ${Math.abs(s.daysToUnsupported)} days ago)`
+      : `${s.fullyUnsupported} (${s.daysToUnsupported} days)`;
+    const migrate = s.migrateTo.map((m) => `\`${m}\``).join(', ');
+    lines.push(
+      `| \`${s.label}\` | \`${f.file}:${f.line}\` | ${brownout} | ${unsupported} | ${migrate} | [${s.sourceRef}](${s.source}) |`,
+    );
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 /** Append markdown to $GITHUB_STEP_SUMMARY when running inside Actions. */

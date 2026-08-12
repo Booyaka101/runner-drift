@@ -5,7 +5,7 @@ import os from 'node:os';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { runGuard, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
 import { readLock, writeLock, SCHEMA_VERSION } from '../src/lock.mjs';
-import { captureIO } from './helpers.mjs';
+import { captureIO, FIXTURES } from './helpers.mjs';
 
 async function tmp() {
   return mkdtemp(path.join(os.tmpdir(), 'runner-drift-test-'));
@@ -198,6 +198,24 @@ test('guard writes a markdown table to $GITHUB_STEP_SUMMARY', async () => {
   } finally {
     if (prev === undefined) delete process.env.GITHUB_STEP_SUMMARY;
     else process.env.GITHUB_STEP_SUMMARY = prev;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('without --fail-on-retirement, retiring labels change nothing', async () => {
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  const workflows = path.join(FIXTURES, 'workflows-retirement');
+  try {
+    // The fixture pins macos-14 (retires 2026-11-02); with the flag absent the
+    // run must look exactly like 1.0.2: baseline, exit 0, no retirement output.
+    const r = await guard({ tools: 'node', 'lock-file': lockFile, workflows });
+    assert.equal(r.code, EXIT_OK);
+    assert.match(r.stdout, /baseline recorded/);
+    assert.ok(!r.stdout.includes('::error'), 'no retirement annotations');
+    assert.ok(!r.stdout.includes('retirement'), 'no retirement text');
+    assert.equal(r.stderr, '');
+  } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });

@@ -12,6 +12,10 @@ inputs:
     description: 'Fail the job on drift of at least this severity: major, minor or any. Omit to never fail (report only).'
     required: false
     default: ''
+  fail-on-retirement:
+    description: 'Fail if a pinned runs-on label browns out or retires within this many days. Empty disables the check.'
+    required: false
+    default: ''
   tools:
     description: 'Comma-separated tools to watch (e.g. python,cmake,clang). Omit to use the lock file, then workflow detection.'
     required: false
@@ -27,7 +31,7 @@ inputs:
   version:
     description: 'npm version of runner-drift to run.'
     required: false
-    default: '1.0.2'
+    default: '1.1.0'
   github-token:
     description: 'Token used only to raise the api.github.com rate limit.'
     required: false
@@ -46,6 +50,7 @@ runs:
       env:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         RD_FAIL_ON: ${{ inputs.fail-on }}
+        RD_FAIL_ON_RETIREMENT: ${{ inputs.fail-on-retirement }}
         RD_TOOLS: ${{ inputs.tools }}
         RD_LOCK_FILE: ${{ inputs.lock-file }}
         RD_WORKFLOWS: ${{ inputs.workflows }}
@@ -59,6 +64,7 @@ runs:
         WF_ABS="$(abs "$RD_WORKFLOWS")"
         args=(guard --lock-file "$LOCK_ABS" --workflows "$WF_ABS")
         if [ -n "$RD_FAIL_ON" ]; then args+=(--fail-on "$RD_FAIL_ON"); fi
+        if [ -n "$RD_FAIL_ON_RETIREMENT" ]; then args+=(--fail-on-retirement "$RD_FAIL_ON_RETIREMENT"); fi
         if [ -n "$RD_TOOLS" ]; then args+=(--tools "$RD_TOOLS"); fi
         printf 'lock-file=%s\n' "$RD_LOCK_FILE" >> "$GITHUB_OUTPUT"
         # npx resolves a bin against the CWD's package.json first. In a checkout
