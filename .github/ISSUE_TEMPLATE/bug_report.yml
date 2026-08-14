@@ -1,0 +1,45 @@
+name: Bug report
+description: Something didn't work the way it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you ran, and what came back.
+      placeholder: |
+        $ npx runner-drift plan --from ubuntu-22.04 --to ubuntu-24.04
+        Error: ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: runner-drift version
+      description: Output of `npx runner-drift --version`
+    validations:
+      required: true
+
+  - type: input
+    id: runtime
+    attributes:
+      label: Node version and OS
+      description: Output of `node --version`, plus your OS. If it failed inside a workflow, the `runs-on:` value instead.
+      placeholder: v22.18.0 on ubuntu-24.04
+    validations:
+      required: true
+
+  - type: textarea
+    id: lock
+    attributes:
+      label: Relevant part of `runner-lock.json`
+      description: The entries for the tools that drifted, or that it failed to resolve.
+      render: json
