@@ -191,8 +191,9 @@ built the machine. The **agent** one does. GitHub requires each new
 `actions/runner` release to be installed within 30 days of publication, and the
 docs state the consequence plainly: *"If you do not perform a software update
 within 30 days, the GitHub Actions service will not queue jobs to your runner."*
-Full enforcement on GitHub Enterprise Cloud was 2026-09-25 with brownouts from
-2026-08-24, and GHEC with Data Residency was enforced on 2026-07-31
+On GitHub Enterprise Cloud the **brownouts have been running since 2026-08-24**
+and full enforcement lands **2026-09-25**. GHEC with Data Residency was enforced
+on 2026-07-31
 ([timeline](https://github.blog/changelog/2026-06-12-github-actions-minimum-version-enforcement-timeline-for-self-hosted-runners/)).
 GitHub Enterprise Server is not covered.
 
@@ -377,7 +378,7 @@ a label inside the `--fail-on-retirement` window, a runner version inside the
 | `tools` | `''` | Comma-separated override |
 | `lock-file` | `runner-lock.json` | Lock file path |
 | `workflows` | `.github/workflows` | Scanned when there is no lock yet |
-| `version` | `1.2.0` | npm version of `runner-drift` to run |
+| `version` | `1.2.1` | npm version of `runner-drift` to run |
 | `package` | `''` | Override the npm spec, e.g. a `.tgz` built in the same job. Only useful for testing the action before the version it requests is published |
 | `github-token` | `${{ github.token }}` | Rate limit, plus the runner listing for `fail-on-deprecation` (which the default token cannot read) |
 
