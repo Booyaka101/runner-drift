@@ -101,7 +101,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
-- **Three `js/polynomial-redos` findings, two of them older than this release.**
+- **Nine `js/polynomial-redos` findings, six of them open on `main` since 2026-08-14.**
   CodeQL flagged `\s*(.*)$` in the `runs-on:` and block-list scanners (present
   since 1.0.0) and `/\?.*$/` in the new `endpointLabel`. The pair is what costs:
   both quantifiers can match a space, and `$` can fail because `.` excludes line
@@ -114,6 +114,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   inputs CodeQL named: 60k characters went from 3.5s to under a millisecond, and
   640k now takes 1.3ms. Output is byte-identical on every fixture, because for a
   line with no terminator in it the captures do not change.
+
+  The other six were in the manifest parser and had been open on `main` since
+  before 1.1.0 shipped. Same class, same treatment. The worst two were the
+  trailing-parenthesis note stripper and the version cleaner, both spelled
+  `\s*(...)\s*`: the leading whitespace run is re-tried from every start position
+  when the rest cannot match, so an unclosed parenthesis after a long stretch of
+  spaces went quadratic. 240k characters took 45 seconds and now take about a
+  millisecond. The note stripper is no longer a regex at all, since indexing from
+  the last `(` expresses the same rule in linear time. Verified by parsing all
+  four real manifest snapshots before and after: 791 tool entries and 912 version
+  strings, identical to the byte. Also fixed a
+  `js/incomplete-url-substring-sanitization` in a test assertion, which is a
+  false positive but a tighter assertion once anchored.
 
 - **`abs()` in `action.yml` did not recognise a Windows-absolute path.** `shell: bash`
   on `windows-latest` is Git Bash, where an absolute path can arrive as
@@ -240,7 +253,7 @@ the two fixes above and nothing else:
 - four retirement scenarios whose `file=` went from an absolute,
   platform-separated path to `file=test/fixtures/workflows-retirement/pinned.yml`.
 
-All 137 pre-1.2.0 tests pass unmodified, and the suite is now 220.
+All 137 pre-1.2.0 tests pass unmodified, and the suite is now 221.
 
 **Enterprise scope is absent because there is nothing to call.** The 2026-09-03
 changelog says the endpoint is callable at repository, organization *or
