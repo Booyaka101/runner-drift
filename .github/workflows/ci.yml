@@ -51,10 +51,27 @@ jobs:
 
       # Second: the same action resolving from npm inside its own repo — the case
       # that used to fail with exit 127 because npx resolves a bin against the
-      # CWD's package.json first. Only a registry spec can reproduce that, so it
-      # cannot be folded into the step above. Expect ETARGET until the version in
-      # action.yml is published; that is the release order, not a regression.
+      # CWD's package.json first. Only a registry spec reproduces that (it needs
+      # the name AND the version to match the local package.json), so it cannot
+      # be folded into the step above.
+      #
+      # It is skipped until the version is on npm. Otherwise every release
+      # candidate carries one permanently-red step, which trains you to ignore a
+      # red X on the run you are about to tag.
+      - name: Is this version on npm yet?
+        id: onnpm
+        shell: bash
+        run: |
+          set -uo pipefail
+          v="$(node -p "require('./package.json').version")"
+          if npm view "runner-drift@$v" version >/dev/null 2>&1; then
+            printf 'published=true\n' >> "$GITHUB_OUTPUT"
+          else
+            printf 'published=false\n' >> "$GITHUB_OUTPUT"
+            echo "::notice::runner-drift@$v is not on npm yet, so the registry-spec action check is skipped. It runs on the first CI run after publish."
+          fi
       - name: Runner image drift (published action, self-hosted case)
+        if: steps.onnpm.outputs.published == 'true'
         uses: ./
 
   live:

@@ -94,7 +94,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   does not exist on npm yet. It now runs against the tarball the same job builds.
   Handles the trap that a `.tgz` needs a relative spec and a scratch `package.json`
   or `npx` exits 0 having installed nothing. The registry-spec step stays as well,
-  because only that reproduces the `npx`-resolves-the-CWD collision 1.0.2 fixed.
+  because only that reproduces the `npx`-resolves-the-CWD collision 1.0.2 fixed,
+  but it now skips itself until the version is on npm. 1.1.0 shipped with that
+  step expected-red on the release candidate, which is how you learn to ignore a
+  red X on the run you are about to tag.
 
 ### Fixed
 

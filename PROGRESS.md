@@ -12,30 +12,29 @@ the owner to open the PR, publish to npm and cut the tag.
 
 ## NEXT STEPS (owner, from the phone)
 
-Mostly the same as 1.1.0, but the action is now actually tested before publish:
-the new `Pack` + `uses: ./ (package:)` steps install the tarball the job just
-built, so the composite body is proven green on the PR. Only the deliberate
-registry-spec step still races npm.
+No ETARGET dance this time. 1.1.0 shipped with one CI step expected to be red
+until publish, which is how you learn to ignore a red X on the run you are about
+to tag. Two changes removed it: the composite action is now tested against the
+tarball the job builds, and the registry-spec step skips itself until the version
+is actually on npm. So CI is green on the PR and green again after publish, when
+that last step starts running for real.
 
-1. Open the PR from `runner-version-deprecations`. `test`, `live`, `guard` and
-   the new `runners` jobs should be green, including the composite action against
-   the local tarball. The **"published action"** step inside `test` will still
-   fail with `ETARGET No matching version found for runner-drift@1.2.0` until
-   step 2, because it deliberately requests a registry spec — that is the only
-   way to reproduce the npx-CWD collision 1.0.2 fixed. Expected pre-publish, not
-   a regression.
-2. `npm publish` from the merged `main` (OIDC provenance is already wired, see
-   `e7ee2e3`).
-3. Poll `npm view runner-drift@1.2.0 version` until it resolves (LESSONS
-   2026-08-05: the registry lags `publish`), then re-run CI. All green.
-4. Tag `v1.2.0`, move `v1` onto it, cut the GitHub release with the 1.2.0
-   CHANGELOG entry as the notes. The Marketplace listing picks up new releases
-   automatically now that it exists (LESSONS 2026-08-20), so no 2FA step.
-5. Dogfood: add a `runner-versions` lint job to the repos that run runner-drift
-   **and** actually own self-hosted runners. It needs a PAT with administration
-   read, so it is only worth wiring where such a token already exists. On repos
-   with no self-hosted runners the command correctly reports 0 and exits 0, which
-   is a no-op job not worth adding.
+1. PR from `runner-version-deprecations`, CI green on every job.
+2. Merge to `main`, CI green on the merge commit.
+3. Tag `v1.2.0`. `release.yml` publishes to npm by OIDC with provenance — no
+   token anywhere (`e7ee2e3`).
+4. Poll `npm view runner-drift@1.2.0 version` until it resolves (LESSONS
+   2026-08-05: the registry lags `publish`), then re-run CI so the registry-spec
+   step runs.
+5. Cut the GitHub release from the 1.2.0 CHANGELOG entry. `major-tag.yml` moves
+   `v1` on `release: published`, and the Marketplace listing picks up new
+   releases by itself now that it exists (LESSONS 2026-08-20), so no 2FA step.
+
+**Left after the release:** dogfood a `runner-versions` lint job into the repos
+that run runner-drift **and** actually own self-hosted runners. It needs a PAT
+with administration read, so it is only worth wiring where such a token already
+exists; on a repo with no self-hosted runners the command correctly reports 0 and
+exits 0, which is a no-op job not worth adding.
 
 ---
 
