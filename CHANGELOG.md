@@ -107,10 +107,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   both quantifiers can match a space, and `$` can fail because `.` excludes line
   terminators, so one stray carriage return on a long line makes the engine try
   every split of the whitespace between them. Indentation is now an explicit
-  `[ 	]` class and the value is `([^
-]*)` with no `$`, so there is nothing to
-  fail and nothing to backtrack. `extractRunScripts` had the identical shape and
-  was not flagged; fixed too rather than left beside a fixed one. Measured on the
+  space-or-tab class and the value stops at a line terminator instead of
+  anchoring on `$`, so there is nothing to fail and nothing to backtrack.
+  `extractRunScripts` had the identical shape and CodeQL did not flag it; fixed
+  too, rather than left sitting beside a fixed one. Measured on the
   inputs CodeQL named: 60k characters went from 3.5s to under a millisecond, and
   640k now takes 1.3ms. Output is byte-identical on every fixture, because for a
   line with no terminator in it the captures do not change.
