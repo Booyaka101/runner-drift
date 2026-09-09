@@ -148,9 +148,14 @@ export function deprecationsUrl(scope, version) {
   return `${API_BASE}${scope.path}/actions/runners/deprecations/${encodeURIComponent(version)}`;
 }
 
-/** `GET /orgs/acme/actions/runners` — the endpoint as a user would curl it. */
+/**
+ * `GET /orgs/acme/actions/runners` — the endpoint as a user would curl it.
+ *
+ * The query is dropped by splitting rather than by `/\?.*$/`, which is quadratic
+ * on a string of many `?` (CodeQL js/polynomial-redos).
+ */
 export function endpointLabel(url) {
-  return `GET ${String(url).replace(API_BASE, '').replace(/\?.*$/, '')}`;
+  return `GET ${String(url).replace(API_BASE, '').split('?')[0]}`;
 }
 
 /* ------------------------------------------------------------------ failures */
