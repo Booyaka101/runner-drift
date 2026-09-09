@@ -31,10 +31,14 @@ export function extractRunScripts(text) {
   const lines = String(text ?? '').split(/\r?\n/);
   const scripts = [];
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^([ \t]*)-?[ \t]*run:[ \t]*([^\r\n]*)/);
+    // The dash has to be inside the optional group, not beside it. `[ \t]*-?[ \t]*`
+    // is two runs over the same class with nothing mandatory between them, so on
+    // a long indent that never reaches `run:` the engine tries every way to split
+    // the spaces. Requiring the `-` inside the group removes the ambiguity.
+    const m = lines[i].match(/^[ \t]*(?:-[ \t]*)?run:[ \t]*([^\r\n]*)/);
     if (!m) continue;
     const baseIndent = indentOf(lines[i]);
-    const inline = m[2].trim();
+    const inline = m[1].trim();
     if (inline && !/^[|>][-+0-9]*$/.test(inline)) {
       scripts.push(inline.replace(/^['"]|['"]$/g, ''));
       continue;
