@@ -4,6 +4,28 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-09-09
+
+### Fixed
+
+- **The README said GitHub Enterprise Cloud enforcement "was 2026-09-25".** It is
+  2026-09-25, which was sixteen days away when 1.2.0 shipped. The past tense told
+  a reader the deadline had already gone when they still had time to act, and it
+  buried the more urgent half: the brownouts have been running since 2026-08-24,
+  so an affected GHEC fleet is already losing jobs intermittently. Reworded, and
+  every other date in the README audited against the current date while there.
+
+  Shipped as a patch rather than left for the next release because the npm page
+  renders the published README, and that is the surface most people read before
+  installing a CLI.
+
+- The `user-agent` and `action.yml`'s `version` default are now asserted against
+  `package.json` by tests. The user-agent said `runner-drift/1.0.2` for the whole
+  of 1.1.0 because nothing tied the two together; 1.2.0 corrected it by hand,
+  which would have rotted again on the next release.
+
+[1.2.1]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.2.1
+
 ## [1.2.0] — 2026-09-09
 
 ### Added

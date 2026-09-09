@@ -378,7 +378,7 @@ a label inside the `--fail-on-retirement` window, a runner version inside the
 | `tools` | `''` | Comma-separated override |
 | `lock-file` | `runner-lock.json` | Lock file path |
 | `workflows` | `.github/workflows` | Scanned when there is no lock yet |
-| `version` | `1.2.0` | npm version of `runner-drift` to run |
+| `version` | `1.2.1` | npm version of `runner-drift` to run |
 | `package` | `''` | Override the npm spec, e.g. a `.tgz` built in the same job. Only useful for testing the action before the version it requests is published |
 | `github-token` | `${{ github.token }}` | Rate limit, plus the runner listing for `fail-on-deprecation` (which the default token cannot read) |
 
