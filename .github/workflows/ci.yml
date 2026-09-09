@@ -27,8 +27,33 @@ jobs:
       - run: node --test
       - run: node src/cli.mjs --help
 
-      # The published action, run inside its own repo — the case that used to
-      # fail with exit 127. Keeping it here is what proves 1.0.2 fixed it.
+      # Two different things, both worth proving.
+      #
+      # First: the composite action against the tarball this job just built. The
+      # step body is the surface most users touch and the one `node --test`
+      # cannot reach, and this way it is exercised on a real runner before the
+      # version it requests exists on npm.
+      - name: Pack
+        id: pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Into the workspace, and passed on as a RELATIVE path: $RUNNER_TEMP is
+          # D:\a\_temp on the windows leg, and a Windows-absolute path through
+          # bash string handling is more trouble than it is worth.
+          npm pack >/dev/null
+          v="$(node -p "require('./package.json').version")"
+          printf 'tarball=runner-drift-%s.tgz\n' "$v" >> "$GITHUB_OUTPUT"
+      - name: Runner image drift (composite action, local tarball)
+        uses: ./
+        with:
+          package: ${{ steps.pack.outputs.tarball }}
+
+      # Second: the same action resolving from npm inside its own repo — the case
+      # that used to fail with exit 127 because npx resolves a bin against the
+      # CWD's package.json first. Only a registry spec can reproduce that, so it
+      # cannot be folded into the step above. Expect ETARGET until the version in
+      # action.yml is published; that is the release order, not a regression.
       - name: Runner image drift (published action, self-hosted case)
         uses: ./
 

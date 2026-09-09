@@ -88,7 +88,21 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `UNKNOWN-VERSION` row annotates nothing, and no workflow directory means no
   join and no complaint.
 
+- Action input `package`, to override the npm spec with a local `.tgz`. The
+  composite step body is the surface most users touch and the one `node --test`
+  cannot reach, and until now CI could only exercise it against a version that
+  does not exist on npm yet. It now runs against the tarball the same job builds.
+  Handles the trap that a `.tgz` needs a relative spec and a scratch `package.json`
+  or `npx` exits 0 having installed nothing. The registry-spec step stays as well,
+  because only that reproduces the `npx`-resolves-the-CWD collision 1.0.2 fixed.
+
 ### Fixed
+
+- **`abs()` in `action.yml` did not recognise a Windows-absolute path.** `shell: bash`
+  on `windows-latest` is Git Bash, where an absolute path can arrive as
+  `D:\a\_temp\…`; only a leading `/` was treated as absolute, so `$PWD` was glued
+  onto the front of anything else. Reachable through `lock-file`, `workflows` and
+  the new `package` input.
 
 - **`file=` in a workflow annotation was not a path GitHub could resolve, so
   1.1.0's file annotations never actually worked through the action.** GitHub

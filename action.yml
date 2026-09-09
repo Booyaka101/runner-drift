@@ -36,6 +36,10 @@ inputs:
     description: 'npm version of runner-drift to run.'
     required: false
     default: '1.2.0'
+  package:
+    description: 'Override the npm spec, e.g. a local .tgz built in the same job. Mainly for testing this action before the version it requests exists on npm.'
+    required: false
+    default: ''
   github-token:
     description: 'Raises the api.github.com rate limit. For fail-on-deprecation it must also carry administration read, which the default token does not.'
     required: false
@@ -60,11 +64,15 @@ runs:
         RD_LOCK_FILE: ${{ inputs.lock-file }}
         RD_WORKFLOWS: ${{ inputs.workflows }}
         RD_VERSION: ${{ inputs.version }}
+        RD_PACKAGE: ${{ inputs.package }}
       run: |
         set -euo pipefail
         # Absolute paths, because npx runs from a neutral directory below.
         cd "$GITHUB_WORKSPACE"
-        abs() { case "$1" in /*) printf '%s' "$1";; *) printf '%s/%s' "$PWD" "$1";; esac; }
+        # `shell: bash` on windows-latest is Git Bash, where an absolute path may
+        # well arrive as D:\a\_temp — treat a drive prefix as absolute too, or it
+        # gets $PWD glued onto the front of it.
+        abs() { case "$1" in /* | [A-Za-z]:[/\\]*) printf '%s' "$1";; *) printf '%s/%s' "$PWD" "$1";; esac; }
         LOCK_ABS="$(abs "$RD_LOCK_FILE")"
         WF_ABS="$(abs "$RD_WORKFLOWS")"
         args=(guard --lock-file "$LOCK_ABS" --workflows "$WF_ABS")
@@ -80,4 +88,17 @@ runs:
         # (exit 127) before any install has run. Invoking from an empty directory
         # removes the ambiguity; --package= does NOT, it is the CWD that matters.
         RD_TMP="$(mktemp -d)"
-        ( cd "$RD_TMP" && npx --yes "runner-drift@${RD_VERSION}" "${args[@]}" )
+        SPEC="runner-drift@${RD_VERSION}"
+        case "${RD_PACKAGE:-}" in
+          '') ;;
+          *.tgz|*.tar.gz)
+            # npx silently no-ops on an ABSOLUTE .tgz path -- exit 0, nothing
+            # installed, no error to grep for. Copy it in and use a relative
+            # spec, and give the scratch dir its own package.json.
+            cp "$(abs "$RD_PACKAGE")" "$RD_TMP/local-package.tgz"
+            printf '{"name":"rd-action-scratch","version":"0.0.0","private":true}\n' > "$RD_TMP/package.json"
+            SPEC='./local-package.tgz'
+            ;;
+          *) SPEC="$RD_PACKAGE" ;;
+        esac
+        ( cd "$RD_TMP" && npx --yes "$SPEC" "${args[@]}" )
