@@ -1,7 +1,7 @@
 # PROGRESS — runner-drift
 
 **Status: v1.2.0 BUILT, NOT YET RELEASED.** On branch
-`runner-version-deprecations`. 201/201 tests green, the byte-diff proof is clean,
+`runner-version-deprecations`. 202/202 tests green, the byte-diff proof is clean,
 and the real end-to-end runs were done against the live GitHub API. Needs the
 owner to open the PR, publish to npm and cut the tag.
 
@@ -115,7 +115,7 @@ endpoints.
 
 ### VERIFIED, all run for real on 2026-09-09
 
-- `node --test` -> **201 tests, 201 pass, 0 fail**, fully offline. The 137
+- `node --test` -> **202 tests, 202 pass, 0 fail**, fully offline. The 137
   pre-existing tests are unmodified.
 - **Byte-diff proof.** A harness ran `init`, `guard` and `plan` across 38
   scenarios (every flag combination, every error path, every `--json` payload,
@@ -204,7 +204,7 @@ endpoints.
 4. Handles reality — **met**. Bad flag values, both scope flags at once, no scope,
    401, 403, 404 on the listing, 404 on a version, rate limit, network failure,
    malformed payload, empty fleet, null version, and a fleet past the page cap.
-5. Tests — **met**. `node --test`, 201 passing, offline.
+5. Tests — **met**. `node --test`, 202 passing, offline.
 6. Publish-ready packaging — **met**, verified from a clean install.
 7. README a stranger can follow — **met**. New section 5 with real output, the
    status table, the permission table, the lint-job snippet, the who-is-at-risk

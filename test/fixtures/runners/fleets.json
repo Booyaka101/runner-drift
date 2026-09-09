@@ -82,6 +82,34 @@
     ]
   },
 
+  "vmimage": {
+    "total_count": 2,
+    "runners": [
+      {
+        "id": 51,
+        "runner_group_id": 1,
+        "name": "build-vm-a",
+        "os": "linux",
+        "status": "online",
+        "busy": false,
+        "labels": [{ "id": 1, "name": "self-hosted", "type": "read-only" }],
+        "ephemeral": false,
+        "version": "2.335.1"
+      },
+      {
+        "id": 52,
+        "runner_group_id": 1,
+        "name": "build-vm-b",
+        "os": "linux",
+        "status": "online",
+        "busy": false,
+        "labels": [{ "id": 1, "name": "self-hosted", "type": "read-only" }],
+        "ephemeral": false,
+        "version": "2.335.1"
+      }
+    ]
+  },
+
   "expired": {
     "total_count": 2,
     "runners": [

@@ -106,18 +106,19 @@ untenable. `labels.mjs` carried its own copy under a comment reading "Duplicated
 from report.mjs, which imports this module"; the rounding is what every countdown
 in the output is built on, so all three now come from `src/dates.mjs` and that
 comment is gone. `daysUntil` is still exported from `src/report.mjs` for
-compatibility. Left
-separate on purpose: `runRunners` and `checkOwnRunner` (34.8%) are two genuinely
-different workflows onto one survey, a fleet report and a single-runner check, and
-merging them would need a parameter for every difference; and
-`retirementMessage`'s "retired N days ago" phrasing keeps its own shape rather
-than being forced through `dateWithCountdown`.
+compatibility.
+
+Left separate on purpose: `runRunners` and `checkOwnRunner` measured 34.8% and
+are two genuinely different workflows onto one survey, a fleet report and a
+single-runner check, so merging them would need a parameter for every difference.
+And `retirementMessage`'s "retired N days ago" phrasing keeps its own shape
+rather than being contorted through `dateWithCountdown`.
 
 **Nothing changed for existing users.** `init`, `guard` and `plan` output was
 recorded byte-for-byte over the existing manifest fixtures across 38 scenarios
 before this release and again after, including every JSON payload, every exit
 code and the self-hosted `::notice`. The two transcripts are identical apart from
-the new lines in `--help`. All 137 pre-1.2.0 tests pass unmodified, and the suite is now 201.
+the new lines in `--help`. All 137 pre-1.2.0 tests pass unmodified, and the suite is now 202.
 
 **`registration_deprecates_at` is documented but not yet populated.** The
 [schema](https://docs.github.com/en/rest/actions/self-hosted-runners?apiVersion=2022-11-28)

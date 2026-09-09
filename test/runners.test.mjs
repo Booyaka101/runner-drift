@@ -557,6 +557,18 @@ test('the report reproduces the worked example', async () => {
   assert.match(text, /no end date returned — this version is current/);
 });
 
+test('two non-ephemeral hosts on one version read as a VM image, not as ARC', async () => {
+  // GitHub's required-actions list names both populations. Identical versions on
+  // separate long-lived hosts is the "recreate runners built from older cached
+  // images or templates" case, and the wording has to differ from the ARC one.
+  const s = await survey(fleets.vmimage, { days: 30, failOn: true });
+  assert.equal(s.groups[0].imagePinned, true);
+  assert.equal(s.groups[0].ephemeral, false);
+  const text = runnersReport(s);
+  assert.match(text, /these look image-pinned; update the image or template, not the host/);
+  assert.ok(!text.includes('actions-runner-controller image tag'), 'not the ARC wording');
+});
+
 test('the report names the registration consequence separately', () => {
   const s = {
     status: 'OK',
