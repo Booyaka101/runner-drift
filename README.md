@@ -546,7 +546,7 @@ diffs fine, it just has no countdown.
 ```bash
 git clone https://github.com/Booyaka101/runner-drift
 cd runner-drift
-node --test          # 220 tests, fully offline against recorded real fixtures
+node --test          # 221 tests, fully offline against recorded real fixtures
 ```
 
 Tests run against four **real** manifest snapshots in `test/fixtures/`
