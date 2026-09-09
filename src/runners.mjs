@@ -27,13 +27,24 @@ export const DEFAULT_DEPRECATION_WINDOW_DAYS = 30;
 /** Minimum version required to register at all (changelog 2026-06-12). */
 export const MINIMUM_REGISTRATION_VERSION = '2.329.0';
 
+/** Runner versions are always three numeric fields. */
+const RUNNER_VERSION_SHAPE = /^\d+\.\d+\.\d+$/;
+
+export function isRunnerVersion(version) {
+  return typeof version === 'string' && RUNNER_VERSION_SHAPE.test(version);
+}
+
 /**
  * True for a version GitHub will not let register at all, whatever the
  * deprecations endpoint says. Worth reporting on its own because a version old
  * enough to predate the API's records answers 404, i.e. UNKNOWN-VERSION.
+ *
+ * Anything not shaped like X.Y.Z answers false rather than being compared:
+ * `Number('v2')` is NaN, which sorts low, so `v2.337.0` would otherwise be
+ * reported as unregisterable.
  */
 export function belowRegistrationMinimum(version) {
-  if (!version) return false;
+  if (!isRunnerVersion(version)) return false;
   return compareRunnerVersions(version, MINIMUM_REGISTRATION_VERSION) < 0;
 }
 
@@ -86,6 +97,12 @@ const NO_TOKEN_HINT = ['These endpoints are never readable anonymously — set G
 
 /* ------------------------------------------------------------------- scopes */
 
+// A scope name is interpolated straight into the request path, so it has to be
+// checked here rather than escaped later: `acme?per_page=1` would otherwise
+// build a URL with a query string in the middle of it.
+const OWNER_NAME = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/;
+const REPO_NAME = /^(?!\.+$)[A-Za-z0-9_.-]+$/;
+
 export function repoScope(owner, repo) {
   return { kind: 'repo', owner, repo, name: `${owner}/${repo}`, path: `/repos/${owner}/${repo}` };
 }
@@ -104,7 +121,7 @@ export function resolveScope({ repo = null, org = null, env = {} } = {}) {
   }
   if (org) {
     const name = String(org).trim();
-    if (!name || /[/\s]/.test(name)) {
+    if (!OWNER_NAME.test(name)) {
       return { error: `--org takes an organization name, not "${org}".` };
     }
     return { scope: orgScope(name) };
@@ -116,11 +133,11 @@ export function resolveScope({ repo = null, org = null, env = {} } = {}) {
       detail: 'Pass --repo <owner/repo> or --org <name> (inside a workflow $GITHUB_REPOSITORY is used).',
     };
   }
-  const parts = slug.split('/');
-  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+  const [owner, name, ...rest] = slug.split('/');
+  if (rest.length || !OWNER_NAME.test(owner ?? '') || !REPO_NAME.test(name ?? '')) {
     return { error: `--repo takes owner/repo, not "${slug}".` };
   }
-  return { scope: repoScope(parts[0], parts[1]) };
+  return { scope: repoScope(owner, name) };
 }
 
 export function runnersUrl(scope) {
@@ -215,9 +232,22 @@ export async function listRunners(scope, { perPage = 100, maxPages = 10, fetch: 
 
 /* -------------------------------------------------------------- deprecations */
 
+/**
+ * The schema says date-time, so an ISO prefix is required rather than merely
+ * "something Date.parse accepts": `date` is rendered as `at.slice(0, 10)`, which
+ * would be nonsense for anything else. Whatever this rejects is reported as an
+ * unparsed field, never silently dropped.
+ */
 function isoOrNull(value) {
-  if (typeof value !== 'string' || !value) return null;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(value)) return null;
   return Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+/** A date field the API sent but we could not parse. Reported, never ignored. */
+function unparsedDates(json) {
+  return ['registration_deprecates_at', 'runtime_deprecates_at'].filter(
+    (k) => typeof json?.[k] === 'string' && json[k] && !isoOrNull(json[k]),
+  );
 }
 
 /**
@@ -242,6 +272,7 @@ export async function lookupDeprecation(scope, version, { cache = null, fetch: f
       runnerVersion: typeof json?.runner_version === 'string' ? json.runner_version : version,
       registrationDeprecatesAt: isoOrNull(json?.registration_deprecates_at),
       runtimeDeprecatesAt: isoOrNull(json?.runtime_deprecates_at),
+      unparsedDates: unparsedDates(json),
     };
   } catch (err) {
     result =
@@ -346,24 +377,36 @@ export function looksImagePinned(group) {
 const RUNNER_RELEASES_URL = `${API_BASE}/repos/actions/runner/releases?per_page=100`;
 
 /**
- * version -> publication date, from actions/runner's own releases. Best effort:
- * it only annotates the report, so any failure returns an empty map rather than
- * taking the survey down with it.
+ * actions/runner's own releases: publication dates, and which stable version is
+ * newest so the report can name what to update TO rather than only what breaks.
+ *
+ * Drafts and prereleases are excluded from `latest` — actions/runner really does
+ * ship prereleases (v2.320.1, v2.318.0 and eight others as of 2026-09-09), and
+ * telling someone to install one would be worse than saying nothing.
+ *
+ * Best effort throughout: it annotates the report and nothing more, so any
+ * failure yields an empty result rather than taking the survey down with it.
+ *
+ * @returns {Promise<{dates:Map<string,string>, latest:string|null}>}
  */
 export async function releasePublishDates({ fetch: fj = fetchJson } = {}) {
   const dates = new Map();
+  let latest = null;
   try {
     const { json } = await fj(RUNNER_RELEASES_URL);
-    if (!Array.isArray(json)) return dates;
+    if (!Array.isArray(json)) return { dates, latest };
     for (const rel of json) {
       const tag = String(rel?.tag_name ?? '').replace(/^v/, '');
+      if (!isRunnerVersion(tag)) continue;
       const at = isoOrNull(rel?.published_at);
-      if (tag && at) dates.set(tag, at);
+      if (at) dates.set(tag, at);
+      if (rel?.draft || rel?.prerelease) continue;
+      if (!latest || compareDottedNumbers(tag, latest) > 0) latest = tag;
     }
   } catch {
-    return dates;
+    return { dates: new Map(), latest: null };
   }
-  return dates;
+  return { dates, latest };
 }
 
 /* -------------------------------------------------------------------- survey */
@@ -395,15 +438,30 @@ export async function surveyRunners(
     windowDays: days,
     failOn,
     checkedAt: now.toISOString(),
+    // Present and null on the happy path so --json needs no optional-key checks.
+    message: null,
+    hint: [],
     ghesNote: GHES_NOTE,
     autoUpdateNote: AUTO_UPDATE_NOTE,
     source: SOURCE_CHANGELOG,
   };
 
+  // Every return below carries the same keys, so a --json consumer never has to
+  // branch on which failure it is looking at.
+  const unreadable = (failure, totalCount) => ({
+    ...base,
+    status: failure.status,
+    message: failure.message,
+    hint: failure.hint,
+    truncated: false,
+    surveyedCount: 0,
+    totalCount,
+    groups: [],
+    failing: false,
+  });
+
   const listed = await listRunners(scope, { fetch: fj });
-  if (!listed.ok) {
-    return { ...base, status: listed.status, message: listed.message, hint: listed.hint, groups: [], totalCount: null };
-  }
+  if (!listed.ok) return unreadable(listed, null);
 
   const all = listed.runners;
   const selected = onlyRunnerName ? all.filter((r) => r?.name === onlyRunnerName) : all;
@@ -411,40 +469,47 @@ export async function surveyRunners(
 
   const cache = new Map();
   const resolved = [];
+  // One shape for every group, whether or not it had a version to look up.
+  const resolve = (group, dep) => ({
+    ...group,
+    ...classifyVersion({
+      version: group.version,
+      registrationDeprecatesAt: dep?.registrationDeprecatesAt ?? null,
+      runtimeDeprecatesAt: dep?.runtimeDeprecatesAt ?? null,
+      unknownVersion: Boolean(dep?.unknownVersion),
+      days,
+      now,
+    }),
+    unknownVersion: Boolean(dep?.unknownVersion),
+    unparsedDates: dep?.unparsedDates ?? [],
+    source: dep ? endpointLabel(dep.url) : null,
+    publishedAt: null,
+    updateTo: null,
+    imagePinned: looksImagePinned(group),
+  });
+
   for (const group of groups) {
     if (group.version === null) {
-      resolved.push({ ...group, ...classifyVersion({ version: null, days, now }), source: null, publishedAt: null });
+      resolved.push(resolve(group, null));
       continue;
     }
     const dep = await lookupDeprecation(scope, group.version, { cache, fetch: fj });
     // The listing worked, so a refusal here is systemic: stop rather than
     // repeat a doomed call for every remaining version.
-    if (!dep.ok && !dep.unknownVersion) {
-      return { ...base, status: dep.status, message: dep.message, hint: dep.hint, groups: [], totalCount: listed.totalCount };
-    }
-    resolved.push({
-      ...group,
-      ...classifyVersion({
-        version: group.version,
-        registrationDeprecatesAt: dep.registrationDeprecatesAt ?? null,
-        runtimeDeprecatesAt: dep.runtimeDeprecatesAt ?? null,
-        unknownVersion: Boolean(dep.unknownVersion),
-        days,
-        now,
-      }),
-      unknownVersion: Boolean(dep.unknownVersion),
-      source: endpointLabel(dep.url),
-      publishedAt: null,
-      imagePinned: looksImagePinned(group),
-    });
+    if (!dep.ok && !dep.unknownVersion) return unreadable(dep, listed.totalCount);
+    resolved.push(resolve(group, dep));
   }
 
-  // The publication date only annotates an OK row ("published X, no end date
-  // returned"), so it is fetched after classification or not at all.
-  if (publishDates && resolved.some((g) => g.status === RUNNER_STATUS.OK && g.version)) {
-    const dates = await releasePublishDates({ fetch: fj });
+  // Fetched after classification, and only when a row can use it: an OK row
+  // shows when its version shipped, and any behind row gets an update target.
+  if (publishDates && resolved.some((g) => isRunnerVersion(g.version))) {
+    const { dates, latest } = await releasePublishDates({ fetch: fj });
     for (const g of resolved) {
-      if (g.status === RUNNER_STATUS.OK) g.publishedAt = dates.get(g.version) ?? null;
+      if (!isRunnerVersion(g.version)) continue;
+      g.publishedAt = dates.get(g.version) ?? null;
+      if (latest && compareRunnerVersions(g.version, latest) < 0) {
+        g.updateTo = { version: latest, publishedAt: dates.get(latest) ?? null };
+      }
     }
   }
 
@@ -455,12 +520,18 @@ export async function surveyRunners(
       a.count - b.count,
   );
 
+  // Two different numbers, deliberately. `surveyedCount` is what was actually
+  // classified and is what the report counts; `totalCount` is the fleet size the
+  // API claims. They differ when the listing was truncated, or when the API's
+  // total_count disagrees with the objects it returned — either way the report
+  // says so rather than printing a number it cannot stand behind.
+  const surveyedCount = resolved.reduce((n, g) => n + g.count, 0);
   return {
     ...base,
     status: SURVEY_STATUS.OK,
     truncated: Boolean(listed.truncated),
-    totalCount: onlyRunnerName ? selected.length : listed.totalCount,
-    fleetCount: all.length,
+    surveyedCount,
+    totalCount: onlyRunnerName ? surveyedCount : listed.totalCount,
     groups: resolved,
     failing: resolved.some((g) => statusFails(g.status, { failOn })),
   };

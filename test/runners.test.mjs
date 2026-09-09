@@ -23,7 +23,7 @@ import {
   resolveScope,
   surveyRunners,
 } from '../src/runners.mjs';
-import { runnersReport, runnersAnnotations, runnersSummaryMarkdown } from '../src/report.mjs';
+import { markdownTable, runnersReport, runnersAnnotations, runnersSummaryMarkdown } from '../src/report.mjs';
 import { runRunners, runGuard, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
 import { captureIO, readRunnerFixtures, runnerRoutes, stubApi, FIXTURES } from './helpers.mjs';
 
@@ -356,8 +356,37 @@ test('zero self-hosted runners is the normal case, not a failure', async () => {
   const s = await survey(fleets.arc, { failOn: true }, { listing: recorded.listing });
   assert.equal(s.status, SURVEY_STATUS.OK);
   assert.equal(s.totalCount, 0);
+  assert.equal(s.surveyedCount, 0);
   assert.deepEqual(s.groups, []);
   assert.equal(s.failing, false);
+});
+
+test('the header counts what was surveyed, and a shortfall is stated', async () => {
+  // total_count says nine, the listing returns two. Printing nine would be a lie.
+  const short = {
+    total_count: 9,
+    runners: [
+      { id: 1, name: 'a', os: 'linux', status: 'online', busy: false, labels: [], version: '2.337.0' },
+      { id: 2, name: 'b', os: 'linux', status: 'online', busy: false, labels: [], version: '2.337.0' },
+    ],
+  };
+  const s = await survey(short, { days: 30 });
+  assert.equal(s.totalCount, 9);
+  assert.equal(s.surveyedCount, 2);
+  const text = runnersReport(s);
+  assert.match(text, /^self-hosted runners — acme \(2 runners, 1 version\)$/m);
+  assert.match(text, /^note: the API reported 9 runners but returned 2 — only what it returned was checked$/m);
+  assert.match(runnersSummaryMarkdown(s), /`acme` — 2 runners on 1 version/);
+  assert.match(runnersSummaryMarkdown(s), /> ⚠️ the API reported 9 runners but returned 2/);
+});
+
+test('an empty fleet the API claims is non-empty still says so', async () => {
+  const s = await survey(fleets.arc, {}, { listing: { status: 200, body: { total_count: 3, runners: [] } } });
+  const text = runnersReport(s);
+  assert.match(text, /^self-hosted runners — acme \(0 runners\)$/m);
+  assert.match(text, /no self-hosted runners registered/);
+  assert.match(text, /the API reported 3 runners but returned 0/);
+  assert.match(runnersSummaryMarkdown(s), /the API reported 3 runners but returned 0/);
 });
 
 test('a listing 403 is a PERMISSION status naming the permission and endpoint', async () => {
@@ -492,25 +521,31 @@ test('a fleet past the page cap is reported as truncated, not silently cut', asy
     assert.equal(listed.runners.length, 1000, 'ten pages of a hundred');
     const s = await surveyRunners(ORG, { now: NOW });
     assert.equal(s.truncated, true);
-    assert.match(runnersReport(s), /the runner listing was cut off at 5000 — this is a prefix of the fleet/);
+    assert.equal(s.surveyedCount, 1000);
+    assert.equal(s.totalCount, 5000);
+    // The header counts what was classified, never the number the API claimed.
+    const text = runnersReport(s);
+    assert.match(text, /^self-hosted runners — acme \(1000 runners, 1 version\)$/m);
+    assert.match(text, /the runner listing was cut off after 1000 of 5000 — this is a prefix of the fleet/);
+    assert.match(runnersSummaryMarkdown(s), /> ⚠️ the runner listing was cut off after 1000 of 5000/);
   } finally {
     api.restore();
   }
 });
 
-test('the release-date lookup is skipped when no group is OK', async () => {
-  // 2.325.0 is EXPIRED and 2.336.0 is RUNTIME-DUE at a ten-year window, so no
-  // row can carry a publication date and the extra call is not made.
-  const api = stubApi(routes(fleets.expired));
+test('the release lookup happens once, and only when a row can use it', async () => {
+  // A fleet whose only runners never reported a version has nothing to date and
+  // nothing to update, so the extra call is not made.
+  const api = stubApi(routes({ total_count: 1, runners: [{ id: 1, name: 'never', version: null }] }));
   try {
-    const s = await surveyRunners(ORG, { now: NOW, days: 3650, failOn: true });
-    assert.ok(s.groups.every((g) => g.status !== RUNNER_STATUS.OK));
+    const s = await surveyRunners(ORG, { now: NOW });
+    assert.equal(s.groups[0].status, RUNNER_STATUS.UNKNOWN_VERSION);
     assert.equal(api.calls.filter((u) => u.includes('/repos/actions/runner/releases')).length, 0);
   } finally {
     api.restore();
   }
 
-  // And it is made when a row can use it.
+  // With real versions it is fetched exactly once, however many groups there are.
   const api2 = stubApi(routes(fleets.arc));
   try {
     const s = await surveyRunners(ORG, { now: NOW, days: 30 });
@@ -519,6 +554,96 @@ test('the release-date lookup is skipped when no group is OK', async () => {
   } finally {
     api2.restore();
   }
+});
+
+test('a behind version is told what to update to, and it is never a prerelease', async () => {
+  const s = await survey(fleets.arc, { days: 30, failOn: true });
+  const due = s.groups.find((g) => g.version === '2.335.1');
+  assert.deepEqual(due.updateTo, { version: '2.337.0', publishedAt: '2026-08-26T14:33:29Z' });
+  assert.match(
+    runnersReport(s),
+    /update to 2\.337\.0, published 2026-08-26 — the newest stable actions\/runner release/,
+  );
+
+  // The newest version has nothing to update to.
+  assert.equal(s.groups.find((g) => g.version === '2.337.0').updateTo, null);
+
+  // An OK row that happens to be behind keeps the value in --json but is not
+  // nagged about in the text: it already prints why it is fine.
+  const ok = await survey(fleets.expired, { days: 30 });
+  const behindButOk = ok.groups.find((g) => g.version === '2.336.0');
+  assert.equal(behindButOk.status, RUNNER_STATUS.OK);
+  assert.equal(behindButOk.updateTo.version, '2.337.0');
+  const okLines = runnersReport(ok)
+    .split('\n')
+    .filter((l) => l.includes('2.336.0') || l.includes('beyond the'));
+  assert.ok(
+    !okLines.some((l) => l.includes('update to')),
+    'no update nag on a row that is not actionable',
+  );
+  assert.match(runnersReport(ok), /EXPIRED[\s\S]*update to 2\.337\.0/, 'but the EXPIRED row gets one');
+
+  // actions/runner really does ship prereleases (v2.320.1 and nine others in the
+  // recorded list); recommending one would be worse than saying nothing.
+  assert.ok(
+    releases.releases.some((r) => r.prerelease),
+    'the recorded fixture still contains prereleases, so this assertion means something',
+  );
+  const preOnly = {
+    ...releases,
+    releases: [{ tag_name: 'v9.9.9', published_at: '2026-09-01T00:00:00Z', prerelease: true, draft: false }],
+  };
+  const api2 = stubApi((url) => {
+    if (url.includes('/repos/actions/runner/releases')) return { status: 200, body: preOnly.releases };
+    if (url.includes('/deprecations/')) {
+      return recorded.responses[decodeURIComponent(url.split('/deprecations/')[1])];
+    }
+    return { status: 200, body: fleets.arc };
+  });
+  try {
+    const only = await surveyRunners(ORG, { now: NOW, days: 30 });
+    assert.ok(
+      only.groups.every((g) => g.updateTo === null),
+      'a prerelease is never offered as the update target',
+    );
+  } finally {
+    api2.restore();
+  }
+});
+
+test('an unparseable date from the API is reported, not silently read as safe', async () => {
+  const api = stubApi((url) => {
+    if (url.includes('/deprecations/')) {
+      return { status: 200, body: { runner_version: '2.335.1', runtime_deprecates_at: 'not-a-date' } };
+    }
+    if (url.includes('/repos/actions/runner/releases')) return { status: 200, body: releases.releases };
+    return { status: 200, body: fleets.arc };
+  });
+  try {
+    const s = await surveyRunners(ORG, { now: NOW, days: 30 });
+    const g = s.groups.find((x) => x.version === '2.335.1');
+    assert.deepEqual(g.unparsedDates, ['runtime_deprecates_at']);
+    assert.equal(g.runtime, null);
+    assert.match(
+      runnersReport(s),
+      /the API sent a `runtime_deprecates_at` this build could not parse — treated as no date, so do not read this row as safe/,
+    );
+  } finally {
+    api.restore();
+  }
+});
+
+test('a runner name containing a pipe cannot break the summary table', async () => {
+  assert.deepEqual(markdownTable(['A'], [['a|b']]), ['| A |', '| --- |', '| a\\|b |']);
+
+  const piped = {
+    total_count: 1,
+    runners: [{ id: 1, name: 'evil|name', os: 'linux', status: 'online', busy: false, labels: [], version: '2.335.1' }],
+  };
+  const md = runnersSummaryMarkdown(await survey(piped, { days: 30, failOn: true }));
+  const row = md.split('\n').find((l) => l.startsWith('| `2.335.1`'));
+  assert.equal(row.split(' | ').length, 6, 'still six cells, not seven');
+  assert.match(row, /evil\\\|name/);
 });
 
 test('a best-effort release-date fetch that fails still leaves a usable survey', async () => {
@@ -678,12 +803,22 @@ test('annotations escalate only where they should', async () => {
   assert.match(refused[0], /organization permission \(read\)/);
 });
 
-test('the step summary is a six-column table with the notes underneath', async () => {
+test('the step summary tables the fleet, with the notes and citation underneath', async () => {
   const md = runnersSummaryMarkdown(await survey(fleets.arc, { days: 30, failOn: true }));
   assert.match(md, /^## runner-drift — self-hosted runners/);
-  assert.match(md, /\| Version \| Runners \| Status \| Runtime ends \| Registration ends \| Source \|/);
-  assert.match(md, /\| `2\.335\.1` \| x2 arc-linux-1, arc-linux-2 \| 🟠 RUNTIME-DUE \| 2026-09-24 \(16 days\) \| — \|/);
-  assert.match(md, /\| `2\.337\.0` \| x1 build-mac-1 \| ⚪ OK \| — \| — \| /);
+  assert.match(
+    md,
+    /\| Version \| Runners \| Status \| Runtime ends \| Registration ends \| Update to \|/,
+  );
+  assert.equal(
+    md.split('\n').find((l) => l.startsWith('| `2.335.1`')),
+    '| `2.335.1` | x2 arc-linux-1, arc-linux-2 | 🟠 RUNTIME-DUE | 2026-09-24 (16 days) | — | `2.337.0` |',
+  );
+  assert.equal(
+    md.split('\n').find((l) => l.startsWith('| `2.337.0`')),
+    '| `2.337.0` | x1 build-mac-1 | ⚪ OK | — | — | — |',
+  );
+  assert.match(md, /^Source: `GET \/orgs\/acme\/actions\/runners\/deprecations\/2\.335\.1`, /m);
   assert.match(md, /^> self-hosted runners auto-update by default/m);
   assert.match(md, /not GitHub Enterprise Server — see \[the enforcement timeline\]/);
 });
@@ -968,6 +1103,78 @@ test('a bad --fail-on-deprecation is exit 2 on guard, hosted runner or not', asy
   assert.match(cap.stderr, /--fail-on-deprecation needs a whole number of days >= 0/);
 });
 
+/* --------------------------------------------------- the exit-code contract */
+
+/**
+ * The whole documented contract in one table: 0 for success including a refused
+ * permission and an empty fleet, 1 for a version inside the window or already
+ * past it, 2 for usage. Nothing else is a legal exit code.
+ */
+test('every documented exit code, end to end through main()', async () => {
+  const { main } = await import('../src/cli.mjs');
+  const empty = { total_count: 0, runners: [] };
+  const cases = [
+    ['due fleet, --fail-on-deprecation 30', fleets.arc, ['--org', 'acme', '--fail-on-deprecation', '30'], EXIT_DRIFT],
+    ['due fleet, no flag', fleets.arc, ['--org', 'acme'], EXIT_OK],
+    ['current fleet, window 30', fleets.current, ['--org', 'acme', '--fail-on-deprecation', '30'], EXIT_OK],
+    ['current fleet, window 0', fleets.current, ['--org', 'acme', '--fail-on-deprecation', '0'], EXIT_OK],
+    ['expired fleet, no flag', fleets.expired, ['--org', 'acme'], EXIT_DRIFT],
+    ['expired fleet, huge window', fleets.expired, ['--org', 'acme', '--fail-on-deprecation', '9999'], EXIT_DRIFT],
+    ['unknown versions, window 0', fleets.unknown, ['--org', 'acme', '--fail-on-deprecation', '0'], EXIT_OK],
+    ['unknown versions, huge window', fleets.unknown, ['--org', 'acme', '--fail-on-deprecation', '9999'], EXIT_OK],
+    ['vm-image fleet, window 30', fleets.vmimage, ['--org', 'acme', '--fail-on-deprecation', '30'], EXIT_DRIFT],
+    ['empty fleet, window 0', empty, ['--org', 'acme', '--fail-on-deprecation', '0'], EXIT_OK],
+    ['--repo and --org together', fleets.arc, ['--repo', 'a/b', '--org', 'acme'], EXIT_USAGE],
+    ['bad window value', fleets.arc, ['--org', 'acme', '--fail-on-deprecation', 'soon'], EXIT_USAGE],
+    ['negative window', fleets.arc, ['--org', 'acme', '--fail-on-deprecation', '-1'], EXIT_USAGE],
+    ['a query string smuggled into --org', fleets.arc, ['--org', 'acme?per_page=1'], EXIT_USAGE],
+    ['a query string smuggled into --repo', fleets.arc, ['--repo', 'a/b?x=1'], EXIT_USAGE],
+    ['a dot for a repo name', fleets.arc, ['--repo', 'a/..'], EXIT_USAGE],
+  ];
+  const sink = { stdout: { write() {} }, stderr: { write() {} } };
+  const savedToken = process.env.GITHUB_TOKEN;
+  const savedRepo = process.env.GITHUB_REPOSITORY;
+  process.env.GITHUB_TOKEN = 'stub';
+  delete process.env.GITHUB_REPOSITORY;
+  try {
+    for (const [label, fleet, argv, want] of cases) {
+      const api = stubApi(routes(fleet));
+      try {
+        assert.equal(await main(['runners', '--no-summary', ...argv], sink), want, label);
+      } finally {
+        api.restore();
+      }
+    }
+    // The refusal statuses, which must never fail a build on their own.
+    for (const [label, listing] of [
+      ['403', { status: 403, body: fleets.forbidden }],
+      ['404', { status: 404, body: fleets.missing }],
+      ['401', { status: 401, body: { message: 'Requires authentication' } }],
+      [
+        'rate limit',
+        { status: 403, body: { message: 'rate limited' }, headers: { 'x-ratelimit-remaining': '0' } },
+      ],
+    ]) {
+      const api = stubApi(routes(fleets.arc, { listing }));
+      try {
+        assert.equal(
+          await main(['runners', '--no-summary', '--org', 'acme', '--fail-on-deprecation', '30'], sink),
+          EXIT_OK,
+          `${label} never fails the build by itself`,
+        );
+      } finally {
+        api.restore();
+      }
+    }
+    // No scope at all, with nothing in the environment to fall back to.
+    assert.equal(await main(['runners', '--no-summary'], sink), EXIT_USAGE, 'no scope');
+  } finally {
+    if (savedToken === undefined) delete process.env.GITHUB_TOKEN;
+    else process.env.GITHUB_TOKEN = savedToken;
+    if (savedRepo !== undefined) process.env.GITHUB_REPOSITORY = savedRepo;
+  }
+});
+
 test('guard on a hosted runner ignores --fail-on-deprecation entirely', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'runner-drift-hosted-'));
   const api = stubApi(runnerRoutes({ scopePath: '/orgs/acme', fleet: fleets.arc, recorded, releases }));
@@ -990,6 +1197,12 @@ test('guard on a hosted runner ignores --fail-on-deprecation entirely', async ()
     assert.equal(code, EXIT_OK);
     assert.match(cap.stdout, /baseline recorded/);
     assert.deepEqual(api.calls, [], 'a hosted runner has no agent version to check');
+    // But it says the flag does not apply, rather than silently doing nothing.
+    assert.match(
+      cap.stdout,
+      /::notice title=runner-drift::--fail-on-deprecation 30 does not apply on a GitHub-hosted runner/,
+    );
+    assert.match(cap.stdout, /Use `runner-drift runners` for a self-hosted fleet/);
   } finally {
     api.restore();
     await rm(dir, { recursive: true, force: true });

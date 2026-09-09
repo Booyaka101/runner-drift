@@ -48,6 +48,7 @@ export {
   deprecationsUrl,
   endpointLabel,
   groupByVersion,
+  isRunnerVersion,
   listRunners,
   lookupDeprecation,
   looksImagePinned,

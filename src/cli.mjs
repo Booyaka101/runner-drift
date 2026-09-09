@@ -110,9 +110,25 @@ const OPTIONS = {
   json: { type: 'boolean', default: false },
   summary: { type: 'boolean', default: true },
   'update-lock': { type: 'boolean', default: true },
+  // parseArgs has no `--no-` negation, so the documented negative forms have to
+  // be declared in their own right and folded in by resolveNegations().
+  'no-summary': { type: 'boolean', default: false },
+  'no-update-lock': { type: 'boolean', default: false },
   help: { type: 'boolean', short: 'h', default: false },
   version: { type: 'boolean', short: 'v', default: false },
 };
+
+/** `--no-summary` -> `summary: false`, for each documented negative form. */
+function resolveNegations(opts) {
+  for (const [negative, positive] of [
+    ['no-summary', 'summary'],
+    ['no-update-lock', 'update-lock'],
+  ]) {
+    if (opts[negative]) opts[positive] = false;
+    delete opts[negative];
+  }
+  return opts;
+}
 
 /* ------------------------------------------------------------------ shared */
 
@@ -410,6 +426,19 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
 
   const imageVersion = env.ImageVersion ?? env.IMAGE_VERSION ?? null;
   const imageOS = env.ImageOS ?? env.IMAGE_OS ?? null;
+
+  // A GitHub-hosted runner has no agent version of its own to check, so the flag
+  // does nothing here. Say so: the action passes it to every job, and a flag that
+  // silently no-ops reads as a broken flag.
+  if (imageVersion && window.failOn) {
+    out(
+      io.stdout,
+      notice(
+        `--fail-on-deprecation ${window.days} does not apply on a GitHub-hosted runner: ` +
+          'the agent version is GitHub\'s to manage. Use `runner-drift runners` for a self-hosted fleet.',
+      ),
+    );
+  }
 
   if (!imageVersion) {
     const msg =
@@ -773,7 +802,7 @@ export async function main(argv = process.argv.slice(2), io = process) {
     out(io.stderr, USAGE);
     return EXIT_USAGE;
   }
-  const opts = parsed.values;
+  const opts = resolveNegations(parsed.values);
 
   if (opts.version) {
     out(io.stdout, await version());

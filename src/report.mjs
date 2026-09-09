@@ -202,12 +202,17 @@ export function notice(message) {
   return annotation('notice', 'runner-drift', message);
 }
 
-/** Header, separator and body rows of a GitHub-flavoured markdown table. */
+/**
+ * Header, separator and body rows of a GitHub-flavoured markdown table. Cells
+ * are escaped, because runner names are user-controlled and a bare `|` silently
+ * splits the row into the wrong columns.
+ */
 export function markdownTable(headers, rows) {
+  const cell = (v) => String(v).replaceAll('|', '\\|');
   return [
-    `| ${headers.join(' | ')} |`,
+    `| ${headers.map(cell).join(' | ')} |`,
     `| ${headers.map(() => '---').join(' | ')} |`,
-    ...rows.map((r) => `| ${r.join(' | ')} |`),
+    ...rows.map((r) => `| ${r.map(cell).join(' | ')} |`),
   ];
 }
 
@@ -364,6 +369,18 @@ export function runnerGroupDetail(group, { windowDays } = {}) {
   if (group.status === RUNNER_STATUS.OK && !runtime && !registration && group.version !== null) {
     lines.push('no end date returned — this version is current');
   }
+  for (const field of group.unparsedDates ?? []) {
+    lines.push(`the API sent a \`${field}\` this build could not parse — treated as no date, so do not read this row as safe`);
+  }
+  // Only on a row that is actually actionable. An OK row already prints why it
+  // is fine, and "update anyway" on it would be the universal-deadline nagging
+  // this report exists to avoid. The value stays in --json either way.
+  if (group.updateTo && !ok) {
+    const published = group.updateTo.publishedAt
+      ? `, published ${group.updateTo.publishedAt.slice(0, 10)}`
+      : '';
+    lines.push(`update to ${group.updateTo.version}${published} — the newest stable actions/runner release`);
+  }
   if (group.status !== RUNNER_STATUS.OK && group.status !== RUNNER_STATUS.UNKNOWN_VERSION && group.imagePinned) {
     lines.push(
       group.ephemeral
@@ -372,6 +389,25 @@ export function runnerGroupDetail(group, { windowDays } = {}) {
     );
   }
   return lines;
+}
+
+/**
+ * Anything the run cannot stand behind about how much of the fleet it saw. The
+ * header counts what was actually classified, so a shortfall is said out loud
+ * rather than papered over with the number the API claimed.
+ */
+function countNotes(survey) {
+  if (survey.truncated) {
+    return [
+      `note: the runner listing was cut off after ${survey.surveyedCount} of ${survey.totalCount} — this is a prefix of the fleet, not all of it`,
+    ];
+  }
+  if (Number.isFinite(survey.totalCount) && survey.totalCount !== survey.surveyedCount) {
+    return [
+      `note: the API reported ${plural(survey.totalCount, 'runner')} but returned ${survey.surveyedCount} — only what it returned was checked`,
+    ];
+  }
+  return [];
 }
 
 /** Plain-text `runners` report. Mirrors planReport()'s shape for the other lane. */
@@ -389,14 +425,15 @@ export function runnersReport(survey) {
   }
 
   if (!survey.groups.length) {
-    out.push(`${head} (${plural(survey.totalCount ?? 0, 'runner')})`);
+    out.push(`${head} (${plural(survey.surveyedCount ?? 0, 'runner')})`);
     out.push('no self-hosted runners registered — nothing to check; GitHub-hosted runners are not affected');
+    out.push(...countNotes(survey));
     out.push(`source: ${endpointLabel(survey.runnersUrl)}`);
     return out.join('\n');
   }
 
   out.push(
-    `${head} (${plural(survey.totalCount, 'runner')}, ${plural(survey.groups.length, 'version')})`,
+    `${head} (${plural(survey.surveyedCount, 'runner')}, ${plural(survey.groups.length, 'version')})`,
   );
 
   const statusWidth = Math.max(13, ...survey.groups.map((g) => g.status.length)) + 1;
@@ -415,9 +452,7 @@ export function runnersReport(survey) {
     }
   }
 
-  if (survey.truncated) {
-    out.push(`note: the runner listing was cut off at ${survey.totalCount} — this is a prefix of the fleet, not all of it`);
-  }
+  out.push(...countNotes(survey));
   if (survey.groups.some((g) => g.status !== RUNNER_STATUS.OK)) {
     out.push(`note: ${survey.autoUpdateNote}`);
   }
@@ -470,15 +505,18 @@ export function runnersSummaryMarkdown(survey) {
     for (const line of survey.hint ?? []) lines.push('', `> ${line}`);
     return `${lines.join('\n')}\n`;
   }
+  const caveats = countNotes(survey).map((n) => `> ⚠️ ${n.replace(/^note: /, '')}`);
   if (!survey.groups.length) {
     lines.push(
       `\`${survey.scope.name}\` has no self-hosted runners registered — nothing to check.`,
     );
+    for (const c of caveats) lines.push('', c);
     return `${lines.join('\n')}\n`;
   }
   lines.push(
-    `\`${survey.scope.name}\` — ${plural(survey.totalCount, 'runner')} on ${plural(survey.groups.length, 'version')}, window ${survey.windowDays} days.`,
+    `\`${survey.scope.name}\` — ${plural(survey.surveyedCount, 'runner')} on ${plural(survey.groups.length, 'version')}, window ${survey.windowDays} days.`,
   );
+  for (const c of caveats) lines.push('', c);
   lines.push('');
   const rows = survey.groups.map((g) => [
     `\`${g.version ?? '(none)'}\``,
@@ -486,14 +524,22 @@ export function runnersSummaryMarkdown(survey) {
     RUNNER_BADGE[g.status] ?? g.status,
     g.runtime ? dateWithCountdown(g.runtime.at, g.runtime.days) : '—',
     g.registration ? dateWithCountdown(g.registration.at, g.registration.days) : '—',
-    g.source ? `\`${g.source}\`` : '—',
+    // Same rule as the text report: a target only where the row is actionable.
+    g.updateTo && g.status !== RUNNER_STATUS.OK ? `\`${g.updateTo.version}\`` : '—',
   ]);
   lines.push(
     ...markdownTable(
-      ['Version', 'Runners', 'Status', 'Runtime ends', 'Registration ends', 'Source'],
+      ['Version', 'Runners', 'Status', 'Runtime ends', 'Registration ends', 'Update to'],
       rows,
     ),
   );
+  // The endpoint is cited once per version rather than as a column: it is the
+  // same path on every row bar the version, which column one already shows.
+  const sources = [...new Set(survey.groups.filter((g) => g.source).map((g) => g.source))];
+  if (sources.length) {
+    lines.push('');
+    lines.push(`Source: ${sources.map((s) => `\`${s}\``).join(', ')}`);
+  }
   lines.push('');
   lines.push(`> ${survey.autoUpdateNote}`);
   lines.push('>');

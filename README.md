@@ -212,6 +212,7 @@ $ runner-drift runners --org acme --fail-on-deprecation 30
 self-hosted runners — acme (3 runners, 2 versions)
   RUNTIME-DUE   2.335.1  x2  arc-linux-1, arc-linux-2
                 runtime support ends 2026-09-24 (16 days) — jobs stop being queued
+                update to 2.337.0, published 2026-08-26 — the newest stable actions/runner release
                 ephemeral runners — change the actions-runner-controller image tag, not the host
   OK            2.337.0  x1  build-mac-1  (published 2026-08-26)
                 no end date returned — this version is current
@@ -253,6 +254,12 @@ source: GET /repos/Booyaka101/runner-drift/actions/runners
 registration date still finishes the jobs it has, it just cannot come back. Fold
 the two together and an ephemeral or ARC fleet reads as healthy right up to the
 next scale-down.
+
+Any row that is not `OK` also gets an update target, read from `actions/runner`'s
+own release list. Drafts and prereleases are excluded, because `actions/runner`
+really does publish them and pointing you at `v2.320.1` would be worse than
+saying nothing. An `OK` row does not get one: it already prints why it is fine,
+and nagging there would be the universal-deadline noise this report avoids.
 
 The window defaults to GitHub's own 30 days, so the plain report still tells you
 what is coming. `--fail-on-deprecation <days>` sets the window *and* makes it
@@ -417,14 +424,27 @@ diffs fine, it just has no countdown.
   `ImageVersion` to diff, so `guard` prints its `::notice` about the image, then
   checks the runner's own **agent** version against GitHub's dates. That needs a
   token with administration read; without one it falls back to the 1.1.0 behaviour,
-  which is the `::notice` and exit 0. `runner-drift runners` covers the whole
-  fleet at repo or org scope. Enterprise scope is not implemented: this package
-  only ever talks to `/repos/…` and `/orgs/…`.
+  which is the `::notice` and exit 0.
+- **Repo and org scope only, because that is all there is.** The 2026-09-03
+  changelog says the endpoint is callable at enterprise level too, and asking
+  `api.github.com` for `/enterprises/{slug}/actions/runners/deprecations/{v}`
+  does return a route-specific `documentation_url`. But GitHub's own
+  [OpenAPI description](https://github.com/github/rest-api-description) for
+  `api.github.com` contains **only** the `/orgs/` and `/repos/` deprecations
+  paths, and `/enterprises/{enterprise}/actions/runners` appears solely in the
+  GHES spec — where there is no deprecations endpoint at all and this enforcement
+  does not apply. So there is nothing to call at enterprise scope on
+  github.com or GHEC, and `--enterprise` is deliberately absent rather than
+  pending. Checked 2026-09-09 against both published specs.
 - **Source files are not scanned for pinned runner versions.** If your Dockerfile,
   Helm values or Terraform pins an `actions/runner` version, `runner-drift` will
-  not find it there. It reads what your runners actually report. For the
-  scanning angle, [`canblmz1/gh-runner-eol`](https://github.com/canblmz1/gh-runner-eol)
-  already does it well and also covers enterprise scope.
+  not find it there. It reads what your runners actually report. For the scanning
+  angle, [`canblmz1/gh-runner-eol`](https://github.com/canblmz1/gh-runner-eol)
+  already does it well.
+- **A fleet larger than 1000 runners is reported as a prefix.** The listing
+  follows pagination to ten pages of 100. Past that the report says how much it
+  saw of how many, rather than quietly surveying the first slice. It also says so
+  when the API's `total_count` disagrees with the objects it actually returned.
 - **Azure DevOps is out of scope**, even though the same images and the same
   deprecation apply there.
 - **No auto-fix.** `runner-drift` tells you exactly what moved and who moved it; the
@@ -438,7 +458,7 @@ diffs fine, it just has no countdown.
 ```bash
 git clone https://github.com/Booyaka101/runner-drift
 cd runner-drift
-node --test          # 202 tests, fully offline against recorded real fixtures
+node --test          # 210 tests, fully offline against recorded real fixtures
 ```
 
 Tests run against four **real** manifest snapshots in `test/fixtures/`

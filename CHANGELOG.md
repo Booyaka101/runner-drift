@@ -66,11 +66,61 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `compareDottedNumbers` from `src/diff.mjs`, and `MS_PER_DAY`, `daysFromMs`
   and `isPast` from the new `src/dates.mjs`.
 
+- **Every row that is not `OK` names what to update to**, read from
+  `actions/runner`'s own release list and cited with its publication date. The
+  image lane has always printed "Migrate to macos-15, macos-26"; the runner lane
+  said what breaks and when but never what to install. Drafts and prereleases are
+  excluded from the target: `actions/runner` publishes prereleases (`v2.320.1` and
+  nine others as of 2026-09-09) and pointing at one would be worse than silence.
+  An `OK` row is left alone, because it already prints why it is fine.
+
+### Fixed
+
+- **`--no-summary` and `--no-update-lock` never worked.** Both have been in the
+  README table and in `--help` since 1.0.0, and both exited 2 with
+  `Unknown option '--no-summary'`: `parseArgs` has no `--no-` negation and the
+  options were only declared in their positive form. Every existing test set
+  `{ 'update-lock': false }` on `runGuard` by hand, so nothing ever exercised the
+  parse layer where the bug lived. The negative forms are now declared and folded
+  in, there is a test that drives them through `main()`, and a second test asserts
+  that every flag `--help` advertises actually parses.
+
+- **`registration_deprecates_at` values GitHub sends but this build cannot parse**
+  were silently dropped to null, which made the row read as safe. They are now
+  reported on their own line. `isoOrNull` also requires a `YYYY-MM-DD` prefix
+  rather than merely something `Date.parse` accepts, since the rendered date is a
+  substring of it.
+
+- **A version not shaped like `X.Y.Z` was reported as below the 2.329.0
+  registration floor.** `Number('v2')` is `NaN`, which sorts low, so `v2.337.0`
+  and any junk string compared below the minimum. Shape is checked first now.
+
+- **A scope name went straight into the request path.** `--org 'acme?per_page=1'`
+  built `https://api.github.com/orgs/acme?per_page=1/actions/runners` and
+  `--repo a/..` built a path that normalises away. Owner, repo and org names are
+  validated against GitHub's naming rules and rejected with exit 2.
+
+- **A runner name containing `|` broke the step-summary table.** `markdownTable`
+  escapes cells now, which also covers the image lane.
+
+- **The report counted runners the API claimed rather than runners it checked.**
+  When `total_count` disagreed with the objects returned, or the listing was
+  truncated at the page cap, the header printed the larger number. It now counts
+  what was classified and states the shortfall.
+
+- `guard --fail-on-deprecation` on a GitHub-hosted runner said nothing, so the
+  flag looked broken. It now prints one `::notice` explaining that a hosted
+  runner's agent version is GitHub's to manage, and points at `runners`. A bad
+  value for the flag is also a usage error on every runner, not only where the
+  check would have run.
+
 ### Changed
 
 - `daysUntil()` now accepts a full ISO date-time as well as `YYYY-MM-DD`, because
   the API returns timestamps where the image table holds dates. Text output trims
   to the date; `--json` keeps the timestamp.
+- `runners --json` has the same keys on every path, success or refusal, so a
+  consumer never has to branch on which shape it got.
 - A `401` from `api.github.com` is now its own `DriftError` code with a "set
   `GITHUB_TOKEN`" hint, instead of a generic `Unexpected HTTP 401`. The runner
   endpoints are never readable anonymously, so this was the most likely first
@@ -114,11 +164,24 @@ single-runner check, so merging them would need a parameter for every difference
 And `retirementMessage`'s "retired N days ago" phrasing keeps its own shape
 rather than being contorted through `dateWithCountdown`.
 
-**Nothing changed for existing users.** `init`, `guard` and `plan` output was
-recorded byte-for-byte over the existing manifest fixtures across 38 scenarios
-before this release and again after, including every JSON payload, every exit
-code and the self-hosted `::notice`. The two transcripts are identical apart from
-the new lines in `--help`. All 137 pre-1.2.0 tests pass unmodified, and the suite is now 202.
+**Nothing changed for existing users, with one deliberate exception.** `init`,
+`guard` and `plan` output was recorded byte-for-byte over the existing manifest
+fixtures across 38 scenarios before this release and again after, including every
+JSON payload, every exit code and the self-hosted `::notice`. **37 of the 38 are
+byte-identical**, apart from the new lines in `--help`. The one that moved is
+`guard --no-update-lock`, which used to print `Unknown option` and exit 2 and now
+does what the README always said it did. All 137 pre-1.2.0 tests pass unmodified,
+and the suite is now 210.
+
+**Enterprise scope is absent because there is nothing to call.** The 2026-09-03
+changelog says the endpoint is callable at repository, organization *or
+enterprise* level, and `api.github.com` does answer
+`/enterprises/{slug}/actions/runners/deprecations/{v}` with a route-specific
+`documentation_url`. Both published OpenAPI descriptions say otherwise: the
+`api.github.com` spec contains only the `/orgs/` and `/repos/` deprecations
+paths, and `/enterprises/{enterprise}/actions/runners` exists solely in the GHES
+spec, which has no deprecations endpoint at all and is not covered by this
+enforcement anyway. So `--enterprise` is a decision, not a backlog item.
 
 **`registration_deprecates_at` is documented but not yet populated.** The
 [schema](https://docs.github.com/en/rest/actions/self-hosted-runners?apiVersion=2022-11-28)
