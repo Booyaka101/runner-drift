@@ -178,8 +178,11 @@ function escapeAnnotation(s) {
  * annotation; without one GitHub attributes it to the step.
  */
 export function annotation(kind, title, message, site = null) {
+  // GitHub matches `file=` against the repo tree, which is POSIX-separated, so a
+  // path built by path.join on a Windows runner has to be converted or the
+  // annotation silently lands on the step instead of the line.
   const where = site
-    ? `file=${escapeAnnotation(site.file)},line=${site.line},col=${site.col},`
+    ? `file=${escapeAnnotation(String(site.file).replaceAll('\\', '/'))},line=${site.line},col=${site.col},`
     : '';
   return `::${kind} ${where}title=${escapeAnnotation(title)}::${escapeAnnotation(message)}`;
 }
@@ -330,10 +333,23 @@ function nameList(names, max = 5) {
 }
 
 /**
+ * The `runs-on:` sites worth pointing at: only where a date is actually moving,
+ * so an UNKNOWN-VERSION row does not annotate files over a version nobody can
+ * date, and an OK row does not annotate them at all.
+ */
+function dueSites(group) {
+  const dated =
+    group.status === RUNNER_STATUS.RUNTIME_DUE ||
+    group.status === RUNNER_STATUS.REGISTRATION_DUE ||
+    group.status === RUNNER_STATUS.EXPIRED;
+  return dated ? (group.workflowSites ?? []) : [];
+}
+
+/**
  * The detail lines under one version row: what ends when, and why this group is
  * probably not something you fix by hand.
  */
-export function runnerGroupDetail(group, { windowDays } = {}) {
+export function runnerGroupDetail(group, { windowDays, sites = true } = {}) {
   const lines = [];
   const { runtime, registration } = group;
   // On an OK row the date is reassurance, so it says why rather than restating
@@ -380,6 +396,13 @@ export function runnerGroupDetail(group, { windowDays } = {}) {
       ? `, published ${group.updateTo.publishedAt.slice(0, 10)}`
       : '';
     lines.push(`update to ${group.updateTo.version}${published} — the newest stable actions/runner release`);
+  }
+  if (sites) {
+    for (const site of dueSites(group)) {
+      lines.push(
+        `serves ${site.file}:${site.line} (runs-on: ${site.labels.join(', ')}) — ${nameList(site.runners, 3)}`,
+      );
+    }
   }
   if (group.status !== RUNNER_STATUS.OK && group.status !== RUNNER_STATUS.UNKNOWN_VERSION && group.imagePinned) {
     lines.push(
@@ -493,6 +516,21 @@ export function runnersAnnotations(survey) {
         `${which} (${nameList(g.names)}): ${detail}. ${survey.ghesNote}.`,
       ),
     );
+    // And on the exact `runs-on:` line of every job those runners serve, which
+    // is where the person who has to fix it is looking. Same idea as the image
+    // lane annotating a pinned label.
+    // Without the `serves` lines: this annotation is already on that line.
+    const onSite = runnerGroupDetail(g, { windowDays: survey.windowDays, sites: false }).join('; ');
+    for (const site of dueSites(g)) {
+      lines.push(
+        annotation(
+          kind,
+          `runner-drift: this job's runners are on ${g.version}`,
+          `${which} serve this job (${nameList(site.runners, 3)}): ${onSite}.`,
+          site,
+        ),
+      );
+    }
   }
   return lines;
 }

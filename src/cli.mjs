@@ -256,6 +256,16 @@ function reportDeprecation(io, survey) {
 }
 
 /**
+ * The `runs-on:` targets on disk, so the runner lane can name the jobs an
+ * at-risk runner actually serves. Absent workflows are silent: `runners` is
+ * documented as needing no repository checkout.
+ */
+async function runsOnTargetsFor(opts) {
+  const scanned = await detect(opts.workflows ?? path.join('.github', 'workflows'));
+  return scanned.missing ? [] : scanned.runsOnTargets;
+}
+
+/**
  * `--fail-on-deprecation`: the classification window, and whether it may change
  * the exit code. Absent, the window is still GitHub's own 30 days so the report
  * names what is coming; only the flag turns that into a failure.
@@ -389,6 +399,7 @@ async function checkOwnRunner(opts, io, env, deps, window) {
     ...window,
     now: deps.now ?? new Date(),
     onlyRunnerName: name,
+    runsOnTargets: await runsOnTargetsFor(opts),
     fetch: deps.fetchJson,
   });
   if (survey.status === SURVEY_STATUS.OK && !survey.groups.length) {
@@ -775,6 +786,7 @@ export async function runRunners(opts, io = process, env = process.env, deps = {
   const survey = await surveyRunners(resolved.scope, {
     ...window,
     now: deps.now ?? new Date(),
+    runsOnTargets: await runsOnTargetsFor(opts),
     fetch: deps.fetchJson,
   });
 

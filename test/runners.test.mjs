@@ -18,12 +18,20 @@ import {
   listRunners,
   lookupDeprecation,
   looksImagePinned,
+  matchRunsOnTargets,
   orgScope,
   repoScope,
   resolveScope,
   surveyRunners,
 } from '../src/runners.mjs';
-import { markdownTable, runnersReport, runnersAnnotations, runnersSummaryMarkdown } from '../src/report.mjs';
+import {
+  annotation,
+  markdownTable,
+  runnersReport,
+  runnersAnnotations,
+  runnersSummaryMarkdown,
+} from '../src/report.mjs';
+import { detect } from '../src/detect.mjs';
 import { runRunners, runGuard, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
 import { captureIO, readRunnerFixtures, runnerRoutes, stubApi, FIXTURES } from './helpers.mjs';
 
@@ -935,7 +943,7 @@ test('runners --json shapes the whole survey', async () => {
   assert.equal(parsed.groups[0].online, 2);
   assert.equal(parsed.groups[0].busy, 1);
   assert.equal(parsed.groups[0].ephemeral, true);
-  assert.deepEqual(parsed.groups[0].labels, ['self-hosted', 'Linux', 'X64']);
+  assert.deepEqual(parsed.groups[0].labels, ['self-hosted', 'Linux', 'X64', 'gpu']);
   assert.equal(parsed.ghesNote, 'enforcement covers github.com and GitHub Enterprise Cloud, not GitHub Enterprise Server');
   assert.match(parsed.source, /^https:\/\/github\.blog\/changelog\/2026-06-12-/);
 });
@@ -1101,6 +1109,93 @@ test('a bad --fail-on-deprecation is exit 2 on guard, hosted runner or not', asy
   );
   assert.equal(hosted, EXIT_USAGE);
   assert.match(cap.stderr, /--fail-on-deprecation needs a whole number of days >= 0/);
+});
+
+/* ---------------------------------------------- the workflow join */
+
+const WORKFLOWS = path.join(FIXTURES, 'workflows');
+
+test('matchRunsOnTargets is a per-runner subset test, not a union one', async () => {
+  const targets = (await detect(WORKFLOWS)).runsOnTargets;
+  assert.deepEqual(
+    targets.map((t) => t.labels),
+    [['ubuntu-22.04'], ['self-hosted', 'linux', 'gpu']],
+    'the label set of each runs-on stays together',
+  );
+
+  // Only gpu-1 carries all three. A union across the group would match both and
+  // claim a job can land on a runner that cannot take it.
+  const [group] = groupByVersion([
+    { name: 'gpu-1', version: '2.335.1', labels: [{ name: 'self-hosted' }, { name: 'Linux' }, { name: 'GPU' }] },
+    { name: 'plain-1', version: '2.335.1', labels: [{ name: 'self-hosted' }, { name: 'Linux' }] },
+  ]);
+  const matched = matchRunsOnTargets(group, targets);
+  assert.equal(matched.length, 1, 'the ubuntu-22.04 job is not served by a self-hosted runner');
+  assert.deepEqual(matched[0].runners, ['gpu-1'], 'case-insensitive, and per runner');
+  assert.equal(matched[0].line, 9);
+  assert.match(matched[0].file, /selfhosted\.yml$/);
+});
+
+test('a runs-on expression is skipped rather than guessed at', () => {
+  const targets = [
+    { labels: [], expression: true, file: 'm.yml', line: 4, col: 14 },
+    { labels: ['self-hosted'], expression: false, file: 'm.yml', line: 9, col: 14 },
+  ];
+  const [group] = groupByVersion([{ name: 'r', version: '2.335.1', labels: [{ name: 'self-hosted' }] }]);
+  assert.deepEqual(
+    matchRunsOnTargets(group, targets).map((m) => m.line),
+    [9],
+  );
+  assert.deepEqual(matchRunsOnTargets(group, []), []);
+  assert.deepEqual(matchRunsOnTargets({ members: [] }, targets), []);
+});
+
+test('a due group names the jobs it serves, and annotates the runs-on line', async () => {
+  const targets = (await detect(WORKFLOWS)).runsOnTargets;
+  const s = await survey(fleets.arc, { days: 30, failOn: true, runsOnTargets: targets });
+  const due = s.groups.find((g) => g.version === '2.335.1');
+  assert.equal(due.workflowSites.length, 1);
+  assert.deepEqual(due.workflowSites[0].runners, ['arc-linux-1', 'arc-linux-2']);
+
+  assert.match(
+    runnersReport(s),
+    /serves .*selfhosted\.yml:9 \(runs-on: self-hosted, linux, gpu\) — arc-linux-1, arc-linux-2/,
+  );
+
+  const lines = runnersAnnotations(s);
+  const onFile = lines.filter((l) => l.includes('file='));
+  assert.equal(onFile.length, 1, 'one file annotation for the one job served');
+  assert.match(onFile[0], /^::error file=[^,]*selfhosted\.yml,line=9,col=13,/);
+  assert.match(onFile[0], /serve this job \(arc-linux-1, arc-linux-2\)/);
+  // The annotation is already on that line, so it does not repeat it.
+  assert.ok(!onFile[0].includes('serves '), 'no redundant location in the message');
+  assert.match(onFile[0], /runtime support ends 2026-09-24 \(16 days\)/);
+});
+
+test('a file= path is POSIX even when built on Windows', () => {
+  assert.match(
+    annotation('error', 'T', 'm', { file: 'a\\b\\c.yml', line: 1, col: 2 }),
+    /^::error file=a\/b\/c\.yml,line=1,col=2,/,
+  );
+});
+
+test('an OK or unknown group annotates no files', async () => {
+  const targets = (await detect(WORKFLOWS)).runsOnTargets;
+  for (const fleet of [fleets.current, fleets.unknown]) {
+    const s = await survey(fleet, { days: 30, failOn: true, runsOnTargets: targets });
+    assert.ok(
+      !runnersAnnotations(s).some((l) => l.includes('file=')),
+      'only a moving date earns a file annotation',
+    );
+  }
+});
+
+test('no workflow directory is silent, not an error', async () => {
+  const r = await runners({ org: 'acme', workflows: path.join(FIXTURES, 'definitely-not-here') });
+  assert.equal(r.code, EXIT_OK);
+  assert.ok(!r.stdout.includes('serves '), 'nothing to join against');
+  assert.ok(!r.stdout.includes('file='));
+  assert.equal(r.stderr, '');
 });
 
 /* --------------------------------------------------- the exit-code contract */

@@ -261,6 +261,31 @@ really does publish them and pointing you at `v2.320.1` would be worse than
 saying nothing. An `OK` row does not get one: it already prints why it is fine,
 and nagging there would be the universal-deadline noise this report avoids.
 
+#### Which of your jobs actually run there
+
+A fleet report tells you a runner is about to go quiet. It does not tell you
+whose build stops. If a workflow directory is present, `runners` closes that gap:
+it reads every `runs-on:` set and matches it against each runner's labels using
+GitHub's own rule, which is that a job lands on a runner only if that runner
+carries **every** label in the set. The match is per runner, not per group, so a
+job needing `[self-hosted, linux, gpu]` is not reported against a runner that
+happens to sit next to a GPU box on the same version.
+
+```
+  RUNTIME-DUE   2.335.1  x2  arc-linux-1, arc-linux-2
+                runtime support ends 2026-09-24 (16 days) — jobs stop being queued
+                update to 2.337.0, published 2026-08-26 — the newest stable actions/runner release
+                serves .github/workflows/bench.yml:9 (runs-on: self-hosted, linux, gpu) — arc-linux-1, arc-linux-2
+                ephemeral runners — change the actions-runner-controller image tag, not the host
+```
+
+Each of those also becomes an `::error` on the exact `runs-on:` line, the same
+way `--fail-on-retirement` annotates a pinned image label, so on a pull request
+it shows up next to the job that is going to stop rather than only in the log. A
+`runs-on: ${{ matrix.os }}` is skipped rather than guessed at, and a row that is
+`OK` or `UNKNOWN-VERSION` annotates nothing. No workflow directory means no join
+and no complaint: `runners` still needs no checkout.
+
 The window defaults to GitHub's own 30 days, so the plain report still tells you
 what is coming. `--fail-on-deprecation <days>` sets the window *and* makes it
 count against the exit code.
@@ -458,7 +483,7 @@ diffs fine, it just has no countdown.
 ```bash
 git clone https://github.com/Booyaka101/runner-drift
 cd runner-drift
-node --test          # 210 tests, fully offline against recorded real fixtures
+node --test          # 216 tests, fully offline against recorded real fixtures
 ```
 
 Tests run against four **real** manifest snapshots in `test/fixtures/`

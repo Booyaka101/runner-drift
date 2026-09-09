@@ -12,7 +12,15 @@ export {
   attributeChanges,
   commitWindow,
 } from './history.mjs';
-export { detect, analyseWorkflow, extractLabels, extractLabelSites, extractRunScripts, commandsInScript } from './detect.mjs';
+export {
+  detect,
+  analyseWorkflow,
+  extractLabels,
+  extractLabelSites,
+  extractRunsOnTargets,
+  extractRunScripts,
+  commandsInScript,
+} from './detect.mjs';
 export { probeTool, probeTools, isProbeable, PROBES } from './probe.mjs';
 export { diffTool, diffToolMaps, shouldFail, maxSeverity, severityBetween, compareVersions, compareDottedNumbers } from './diff.mjs';
 export { readLock, writeLock, emptyLock, toVersionMap, SCHEMA_VERSION, DEFAULT_LOCK_FILE } from './lock.mjs';
@@ -52,6 +60,7 @@ export {
   listRunners,
   lookupDeprecation,
   looksImagePinned,
+  matchRunsOnTargets,
   orgScope,
   releasePublishDates,
   repoScope,

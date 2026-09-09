@@ -74,7 +74,28 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   nine others as of 2026-09-09) and pointing at one would be worse than silence.
   An `OK` row is left alone, because it already prints why it is fine.
 
+- **The report names the jobs an at-risk runner serves**, and annotates their
+  `runs-on:` lines. A fleet report says a runner is going quiet; it does not say
+  whose build stops. `runners` now reads every `runs-on:` set from the workflow
+  directory and matches it against each runner's labels by GitHub's own rule, a
+  job lands on a runner only when that runner carries every label in the set.
+  The match is per runner rather than per version group, because the union of a
+  group's labels would claim a job can run on a box that cannot take it. That
+  needed a new `extractRunsOnTargets()` in `src/detect.mjs`: the existing
+  `labelSites` is flat, one entry per label, and drops `self-hosted` outright,
+  so `[self-hosted, linux, gpu]` came out as two useless sites. A
+  `runs-on: ${{ … }}` is skipped rather than guessed at, an `OK` or
+  `UNKNOWN-VERSION` row annotates nothing, and no workflow directory means no
+  join and no complaint.
+
 ### Fixed
+
+- **`file=` in a workflow annotation used the platform separator.** GitHub
+  matches it against the repo tree, which is POSIX-separated, so on
+  `windows-latest` every `--fail-on-retirement` annotation since 1.1.0 landed on
+  the step rather than on the `runs-on:` line it named. Converted in
+  `annotation()`, which fixes both lanes. No effect on Linux or macOS runners,
+  where `path.join` already yields `/`.
 
 - **`--no-summary` and `--no-update-lock` never worked.** Both have been in the
   README table and in `--help` since 1.0.0, and both exited 2 with
@@ -164,14 +185,17 @@ single-runner check, so merging them would need a parameter for every difference
 And `retirementMessage`'s "retired N days ago" phrasing keeps its own shape
 rather than being contorted through `dateWithCountdown`.
 
-**Nothing changed for existing users, with one deliberate exception.** `init`,
-`guard` and `plan` output was recorded byte-for-byte over the existing manifest
-fixtures across 38 scenarios before this release and again after, including every
-JSON payload, every exit code and the self-hosted `::notice`. **37 of the 38 are
-byte-identical**, apart from the new lines in `--help`. The one that moved is
-`guard --no-update-lock`, which used to print `Unknown option` and exit 2 and now
-does what the README always said it did. All 137 pre-1.2.0 tests pass unmodified,
-and the suite is now 210.
+**Nothing changed for existing users except two bug fixes.** `init`, `guard` and
+`plan` output was recorded byte-for-byte over the existing manifest fixtures
+across 38 scenarios before this release and again after, including every JSON
+payload, every exit code and the self-hosted `::notice`. **33 of the 38 are
+byte-identical**, apart from the new lines in `--help`. The five that moved are
+the two fixes above and nothing else: `guard --no-update-lock` used to print
+`Unknown option` and exit 2, and four retirement scenarios now emit `file=a/b.yml`
+where they emitted `file=a\b.yml` — a Windows-only difference, since the
+transcripts were recorded on Windows and `path.join` already yields `/` on the
+Linux runners this actually runs on. All 137 pre-1.2.0 tests pass unmodified, and
+the suite is now 216.
 
 **Enterprise scope is absent because there is nothing to call.** The 2026-09-03
 changelog says the endpoint is callable at repository, organization *or

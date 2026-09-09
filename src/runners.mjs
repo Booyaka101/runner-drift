@@ -286,7 +286,13 @@ export async function lookupDeprecation(scope, version, { cache = null, fetch: f
 
 /* ------------------------------------------------------------------ grouping */
 
-/** One entry per distinct `version`, null for runners that never connected. */
+/**
+ * One entry per distinct `version`, null for runners that never connected.
+ *
+ * `members` is each runner's own labels, kept because a job only lands on a
+ * runner carrying every label of its `runs-on:` set, and the union across the
+ * group would over-match. It is dropped before the group reaches `--json`.
+ */
 export function groupByVersion(runners) {
   const byVersion = new Map();
   for (const r of runners ?? []) {
@@ -295,15 +301,45 @@ export function groupByVersion(runners) {
     if (!byVersion.has(key)) byVersion.set(key, []);
     byVersion.get(key).push(r);
   }
-  return [...byVersion.entries()].map(([version, members]) => ({
-    version,
-    count: members.length,
-    names: members.map((m) => m?.name ?? '(unnamed)'),
-    online: members.filter((m) => m?.status === 'online').length,
-    busy: members.filter((m) => m?.busy === true).length,
-    ephemeral: members.some((m) => m?.ephemeral === true),
-    labels: [...new Set(members.flatMap((m) => (m?.labels ?? []).map((l) => l?.name).filter(Boolean)))],
-  }));
+  return [...byVersion.entries()].map(([version, group]) => {
+    const members = group.map((m) => ({
+      name: m?.name ?? '(unnamed)',
+      labels: (m?.labels ?? []).map((l) => l?.name).filter(Boolean),
+    }));
+    return {
+      version,
+      count: members.length,
+      names: members.map((m) => m.name),
+      online: group.filter((m) => m?.status === 'online').length,
+      busy: group.filter((m) => m?.busy === true).length,
+      ephemeral: group.some((m) => m?.ephemeral === true),
+      labels: [...new Set(members.flatMap((m) => m.labels))],
+      members,
+    };
+  });
+}
+
+/**
+ * The `runs-on:` sites this group would actually serve.
+ *
+ * GitHub schedules a job onto a runner only when the runner carries every label
+ * in the set, so this is a per-runner subset test, case-insensitive the way
+ * GitHub matches. A target whose value is a `${{ … }}` expression is skipped:
+ * which runner serves it is not decidable from the file.
+ *
+ * @returns {Array<{labels:string[], file:string, line:number, col:number, runners:string[]}>}
+ */
+export function matchRunsOnTargets(group, targets) {
+  const lower = (list) => new Set(list.map((l) => String(l).toLowerCase()));
+  const byRunner = (group.members ?? []).map((m) => ({ name: m.name, labels: lower(m.labels) }));
+  const matched = [];
+  for (const target of targets ?? []) {
+    if (target.expression || !target.labels?.length) continue;
+    const wanted = [...lower(target.labels)];
+    const serving = byRunner.filter((r) => wanted.every((l) => r.labels.has(l))).map((r) => r.name);
+    if (serving.length) matched.push({ ...target, runners: serving });
+  }
+  return matched;
 }
 
 /* ------------------------------------------------------------ classification */
@@ -420,6 +456,7 @@ export async function releasePublishDates({ fetch: fj = fetchJson } = {}) {
  * @param {boolean} opts.failOn whether --fail-on-deprecation was given
  * @param {string|null} opts.onlyRunnerName narrow to one runner, for `guard`
  * @param {boolean} opts.publishDates annotate OK rows with the release date
+ * @param {Array} opts.runsOnTargets detect().runsOnTargets, to name the jobs served
  */
 export async function surveyRunners(
   scope,
@@ -429,6 +466,7 @@ export async function surveyRunners(
     now = new Date(),
     onlyRunnerName = null,
     publishDates = true,
+    runsOnTargets = [],
     fetch: fj = fetchJson,
   } = {},
 ) {
@@ -470,8 +508,10 @@ export async function surveyRunners(
   const cache = new Map();
   const resolved = [];
   // One shape for every group, whether or not it had a version to look up.
-  const resolve = (group, dep) => ({
+  // `members` exists only for the workflow join and does not survive into it.
+  const resolve = ({ members, ...group }, dep) => ({
     ...group,
+    workflowSites: matchRunsOnTargets({ members }, runsOnTargets),
     ...classifyVersion({
       version: group.version,
       registrationDeprecatesAt: dep?.registrationDeprecatesAt ?? null,

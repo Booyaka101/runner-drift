@@ -1,9 +1,10 @@
 # PROGRESS — runner-drift
 
 **Status: v1.2.0 BUILT, NOT YET RELEASED.** On branch
-`runner-version-deprecations`. 202/202 tests green, the byte-diff proof is clean,
-and the real end-to-end runs were done against the live GitHub API. Needs the
-owner to open the PR, publish to npm and cut the tag.
+`runner-version-deprecations`. 216/216 tests green, the byte-diff proof holds (33
+of 38 scenarios identical, the five that moved are the two bugs this release
+fixes), and the real end-to-end runs were done against the live GitHub API. Needs
+the owner to open the PR, publish to npm and cut the tag.
 
 - Repo: <https://github.com/Booyaka101/runner-drift>
 - npm: <https://www.npmjs.com/package/runner-drift> (latest published: `1.1.0`)
@@ -105,6 +106,20 @@ endpoints.
   an empty fleet) and that `--repo` + `--org` is exit 2. `permissions:` has no
   `administration` scope, so a refusal is the expected path and the job proves
   the degradation rather than pretending to check a fleet.
+- **Two bugs older than this release**, both found by auditing rather than
+  reading. `--no-summary` and `--no-update-lock` have been documented since 1.0.0
+  and never parsed, because `parseArgs` has no `--no-` negation; every existing
+  test set `{ 'update-lock': false }` on `runGuard` directly and so never touched
+  the parse layer. And `file=` in every workflow annotation used the platform
+  separator, so on `windows-latest` the retirement annotations landed on the step
+  instead of the `runs-on:` line they named.
+- **The workflow join.** `extractRunsOnTargets()` in `src/detect.mjs` keeps each
+  `runs-on:` label SET together, which the existing flat `labelSites` cannot do
+  (it is one entry per label and drops `self-hosted` outright). `runners` matches
+  those sets against each runner's own labels by GitHub's rule — every label in
+  the set must be present — and annotates the exact `runs-on:` line of any job an
+  at-risk runner serves. Per runner, not per group: the union of a group's labels
+  would claim a job can land on a box that cannot take it.
 - **Fixtures.** `test/fixtures/runners/deprecations-recorded.json` and
   `runner-releases-recorded.json` are verbatim live responses recorded
   2026-09-09. `fleets.json` holds listings built to the documented schema and
@@ -115,7 +130,7 @@ endpoints.
 
 ### VERIFIED, all run for real on 2026-09-09
 
-- `node --test` -> **202 tests, 202 pass, 0 fail**, fully offline. The 137
+- `node --test` -> **216 tests, 216 pass, 0 fail**, fully offline. The 137
   pre-existing tests are unmodified.
 - **Byte-diff proof.** A harness ran `init`, `guard` and `plan` across 38
   scenarios (every flag combination, every error path, every `--json` payload,
@@ -127,10 +142,19 @@ endpoints.
   including the `dates.mjs` extraction, the comparator extraction and the
   `http.mjs` 401 change. Harness kept outside the repo at
   `D:\tmp\rd-baseline\harness.mjs`.
-- **Clone check.** difflib over 35 new functions against 60 pre-existing:
-  highest 34.8% (`runRunners` vs `checkOwnRunner`), nothing at or above 60%. One
-  extraction was forced by it: `compareRunnerVersions` measured 66.7% against
+- **Clone check.** difflib over every new function against every pre-existing
+  one: highest 34.8% (`runRunners` vs `checkOwnRunner`), nothing at or above 60%.
+  One extraction was forced by it: `compareRunnerVersions` measured 66.7% against
   `compareImageVersions`, so the tuple compare moved to `compareDottedNumbers()`.
+- **Exit-code matrix**, 22 cases through `main()` over the fixtures, asserting the
+  documented contract exactly. Ported into the suite as one table-driven test so
+  it cannot drift from the README.
+- **Flag audit.** Every `--foo` in `--help` fed to the real `OPTIONS` table. This
+  is what caught `--no-summary` and `--no-update-lock`, documented since 1.0.0 and
+  broken since 1.0.0. Also in the suite now.
+- **README transcript check.** All three fenced output blocks in the `runners`
+  section are compared byte-for-byte against what the CLI actually prints, so the
+  docs cannot drift silently.
 - **Live end-to-end**, real token, real API:
   - `runners --repo Booyaka101/runner-drift` -> the real empty fleet, exit 0.
   - The worked example over live dates -> `RUNTIME-DUE 2.335.1 x2` at 2026-09-24
@@ -167,29 +191,53 @@ endpoints.
   execution from any PR), so it was not done. Consequence: in the populated
   end-to-end runs the *listing* half came from the schema-shaped fixture while
   every date, every deprecations response and every release date came from the
-  live API. The empty-fleet path is fully live.
+  live API. The empty-fleet path and both refusal paths are fully live.
 - **`REGISTRATION-DUE` has never fired against the real API**, because the field
   is not populated yet. It is exercised by tests only.
-- **Enterprise scope is not implemented.** The 2026-09-03 changelog says the
-  endpoint is callable at enterprise level too. `gh-runner-eol` covers it; this
-  package only ever talks to `/repos/...` and `/orgs/...`.
+- **Enterprise scope does not exist to implement.** Settled by measurement rather
+  than left as a TODO: the 2026-09-03 changelog says the endpoint is callable at
+  enterprise level, and `api.github.com` does answer
+  `/enterprises/{slug}/actions/runners/deprecations/{v}` with a route-specific
+  `documentation_url` (`#get-runner-version-end-of-life-schedule-for-an-enterprise`)
+  where a bogus sibling path returns the generic one. But GitHub's published
+  OpenAPI descriptions disagree: the `api.github.com` spec contains **only** the
+  `/orgs/` and `/repos/` deprecations paths, and
+  `/enterprises/{enterprise}/actions/runners` appears solely in the GHES spec,
+  which has **no** deprecations path at all and is not covered by this
+  enforcement. So there is nothing to call at enterprise scope on github.com or
+  GHEC. `--enterprise` is absent by decision. Re-check if the
+  `api.github.com` spec ever grows the path.
+- **The workflow join only sees the checkout it is run in.** `runners --org acme`
+  surveys the whole org but can only match `runs-on:` sites in the repository it
+  is invoked from. That is the useful direction (which of *my* jobs stop), but it
+  is not an org-wide impact report.
+- **`detect()` runs more than once per `guard` invocation** (retirement scan,
+  label fallback, tool fallback, and now the runner-lane join). The directories
+  are a handful of small YAML files so it costs milliseconds, and threading one
+  scan through every caller was judged more risk than it removes. Noted rather
+  than hidden.
 
 ### Next features, in the order they are worth doing
 
-1. **Enterprise scope** (`--enterprise <slug>`). The endpoint exists and the
-   scope abstraction in `runners.mjs` is already a `{kind, name, path}` object,
-   so this is one more constructor plus a permission-hint row. Held back only
-   because it cannot be verified without an enterprise account.
-2. **`--fail-on-deprecation` on `plan`**, so a migration preview covers both
-   axes in one command.
-3. **Group by runner group, not just version.** `runner_group_id` is already
-   captured. An org with a stale group is a different remediation from a stale
-   image tag.
-4. **A `--max-age <days>` check against the release list.** The publication dates
-   are already fetched; "this version is 94 days old and auto-update is off" is
-   actionable before any GitHub date lands.
-5. **SARIF output**, if anyone asks. `gh-runner-eol` already does it, so it is
-   only worth it to make one report cover both axes for code-scanning.
+1. **`--fail-on-deprecation` on `plan`**, so a migration preview covers both axes
+   in one command.
+2. **Group by runner group as well as version.** `runner_group_id` is captured on
+   every runner already. An org with one stale group is a different remediation
+   from a stale image tag.
+3. **A `--max-age <days>` check against the release list.** The publication dates
+   and the newest stable version are already fetched for the update target, so
+   "this runner is four releases and 94 days behind and auto-update is off" is
+   available before GitHub publishes any date for it.
+4. **SARIF output**, if anyone asks. `gh-runner-eol` already does it, so it is
+   only worth building to make one report cover both axes for code scanning.
+5. **Enterprise scope**, if and only if the `api.github.com` OpenAPI description
+   grows the path. See the gap above; today there is nothing to call.
+
+### Deliberately not built
+
+- **Source-file scanning for pinned runner versions** (Dockerfiles, Helm values,
+  Terraform). That is `gh-runner-eol`'s lane and it does it well. Duplicating it
+  would be the clone-the-neighbour pattern at product level.
 
 ### The 8-point bar
 
@@ -204,7 +252,7 @@ endpoints.
 4. Handles reality — **met**. Bad flag values, both scope flags at once, no scope,
    401, 403, 404 on the listing, 404 on a version, rate limit, network failure,
    malformed payload, empty fleet, null version, and a fleet past the page cap.
-5. Tests — **met**. `node --test`, 202 passing, offline.
+5. Tests — **met**. `node --test`, 216 passing, offline.
 6. Publish-ready packaging — **met**, verified from a clean install.
 7. README a stranger can follow — **met**. New section 5 with real output, the
    status table, the permission table, the lint-job snippet, the who-is-at-risk
