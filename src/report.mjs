@@ -593,6 +593,20 @@ export function runnersSummaryMarkdown(survey) {
       rows,
     ),
   );
+  // One version serves many jobs, so this is a list rather than a table column.
+  const affected = survey.groups.flatMap((g) =>
+    dueSites(g).map(
+      (site) =>
+        `- \`${annotationPath(site.file)}:${site.line}\` (\`runs-on: ${site.labels.join(', ')}\`) — ${nameList(site.runners, 3)} on \`${g.version}\``,
+    ),
+  );
+  if (affected.length) {
+    lines.push('');
+    lines.push('**Jobs these runners serve:**');
+    lines.push('');
+    lines.push(...affected);
+  }
+
   // The endpoint is cited once per version rather than as a column: it is the
   // same path on every row bar the version, which column one already shows.
   const sources = [...new Set(survey.groups.filter((g) => g.source).map((g) => g.source))];

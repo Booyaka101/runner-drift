@@ -384,6 +384,68 @@ a label inside the `--fail-on-retirement` window, a runner version inside the
 The action wraps `guard`. The fleet-wide `runners` command is a plain
 `run:` step, shown [above](#as-a-lint-job).
 
+### `runners --json`
+
+The same keys on every path, so nothing has to branch on which shape it got. On a
+refusal `groups` is empty and `message` / `hint` carry the reason; on success
+`message` is `null` and `hint` is `[]`.
+
+```json
+{
+  "scope": { "kind": "org", "name": "acme", "path": "/orgs/acme" },
+  "runnersUrl": "https://api.github.com/orgs/acme/actions/runners",
+  "windowDays": 30,
+  "failOn": true,
+  "checkedAt": "2026-09-09T00:00:00.000Z",
+  "status": "OK",
+  "message": null,
+  "hint": [],
+  "truncated": false,
+  "surveyedCount": 3,
+  "totalCount": 3,
+  "failing": true,
+  "ghesNote": "enforcement covers github.com and GitHub Enterprise Cloud, not GitHub Enterprise Server",
+  "autoUpdateNote": "self-hosted runners auto-update by default — at risk are …",
+  "source": "https://github.blog/changelog/2026-06-12-github-actions-minimum-version-enforcement-timeline-for-self-hosted-runners/",
+  "groups": [
+    {
+      "version": "2.335.1",
+      "count": 2,
+      "names": ["arc-linux-1", "arc-linux-2"],
+      "online": 2,
+      "busy": 1,
+      "ephemeral": true,
+      "labels": ["self-hosted", "Linux", "X64", "gpu"],
+      "status": "RUNTIME-DUE",
+      "runtime": { "at": "2026-09-24T15:30:55Z", "date": "2026-09-24", "days": 16, "past": false },
+      "registration": null,
+      "unknownVersion": false,
+      "unparsedDates": [],
+      "source": "GET /orgs/acme/actions/runners/deprecations/2.335.1",
+      "publishedAt": null,
+      "updateTo": { "version": "2.337.0", "publishedAt": "2026-08-26T14:33:29Z" },
+      "imagePinned": true,
+      "workflowSites": [
+        {
+          "labels": ["self-hosted", "linux", "gpu"],
+          "expression": false,
+          "file": ".github/workflows/bench.yml",
+          "line": 9,
+          "col": 13,
+          "runners": ["arc-linux-1", "arc-linux-2"]
+        }
+      ]
+    }
+  ]
+}
+```
+
+`surveyedCount` is what was actually classified and `totalCount` is what the API
+claims the fleet is. They differ when the listing was truncated at the page cap or
+when `total_count` disagrees with the objects returned, and the text report says so
+either way. `runtime.at` keeps the full timestamp; the text report trims it to the
+date.
+
 ### `runner-lock.json`
 
 ```json
@@ -484,7 +546,7 @@ diffs fine, it just has no countdown.
 ```bash
 git clone https://github.com/Booyaka101/runner-drift
 cd runner-drift
-node --test          # 217 tests, fully offline against recorded real fixtures
+node --test          # 219 tests, fully offline against recorded real fixtures
 ```
 
 Tests run against four **real** manifest snapshots in `test/fixtures/`

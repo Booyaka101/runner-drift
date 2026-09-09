@@ -1180,6 +1180,51 @@ test('a due group names the jobs it serves, and annotates the runs-on line', asy
  * absolute path, and `path.join` yields backslashes on `windows-latest`. Neither
  * is an error, which is why it went unnoticed from 1.1.0.
  */
+/**
+ * The README publishes the `--json` shape as a contract. Comparing keys against a
+ * real survey is what stops it drifting the moment a field is added.
+ */
+test('the --json shape the README documents is the shape it emits', async () => {
+  const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+  const block = readme.match(/### `runners --json`[\s\S]*?```json\n([\s\S]*?)\n```/);
+  assert.ok(block, 'the README still documents the JSON shape');
+  const documented = JSON.parse(block[1]);
+
+  const targets = (await detect(WORKFLOWS)).runsOnTargets;
+  const real = await survey(fleets.arc, { days: 30, failOn: true, runsOnTargets: targets });
+
+  const keys = (o) => Object.keys(o).sort();
+  assert.deepEqual(keys(documented), keys(real), 'top level');
+  assert.deepEqual(keys(documented.scope), keys(real.scope), 'scope');
+  assert.deepEqual(keys(documented.groups[0]), keys(real.groups[0]), 'group');
+  assert.deepEqual(keys(documented.groups[0].runtime), keys(real.groups[0].runtime), 'runtime');
+  assert.deepEqual(keys(documented.groups[0].updateTo), keys(real.groups[0].updateTo), 'updateTo');
+  assert.deepEqual(
+    keys(documented.groups[0].workflowSites[0]),
+    keys(real.groups[0].workflowSites[0]),
+    'workflowSites',
+  );
+  // The values that are load-bearing claims, not just illustrative.
+  assert.equal(documented.groups[0].status, real.groups[0].status);
+  assert.deepEqual(documented.groups[0].runtime, real.groups[0].runtime);
+  assert.deepEqual(documented.groups[0].updateTo, real.groups[0].updateTo);
+  assert.equal(documented.ghesNote, real.ghesNote);
+  assert.equal(documented.source, real.source);
+});
+
+test('the step summary lists the affected jobs below the table', async () => {
+  const targets = (await detect(WORKFLOWS)).runsOnTargets;
+  const md = runnersSummaryMarkdown(await survey(fleets.arc, { days: 30, failOn: true, runsOnTargets: targets }));
+  assert.match(md, /\*\*Jobs these runners serve:\*\*/);
+  assert.match(
+    md,
+    /- `test\/fixtures\/workflows\/selfhosted\.yml:9` \(`runs-on: self-hosted, linux, gpu`\) — arc-linux-1, arc-linux-2 on `2\.335\.1`/,
+  );
+  // Nothing to list when nothing is due.
+  const clean = runnersSummaryMarkdown(await survey(fleets.current, { days: 30, runsOnTargets: targets }));
+  assert.ok(!clean.includes('Jobs these runners serve'));
+});
+
 test('a file= path is made repo-relative and POSIX-separated', () => {
   const p = (file, env) => annotationPath(file, env);
   assert.equal(p('a\\b\\c.yml', {}), 'a/b/c.yml', 'separators');

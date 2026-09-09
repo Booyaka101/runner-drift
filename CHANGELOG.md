@@ -223,7 +223,7 @@ the two fixes above and nothing else:
 - four retirement scenarios whose `file=` went from an absolute,
   platform-separated path to `file=test/fixtures/workflows-retirement/pinned.yml`.
 
-All 137 pre-1.2.0 tests pass unmodified, and the suite is now 217.
+All 137 pre-1.2.0 tests pass unmodified, and the suite is now 219.
 
 **Enterprise scope is absent because there is nothing to call.** The 2026-09-03
 changelog says the endpoint is callable at repository, organization *or

@@ -1,7 +1,7 @@
 # PROGRESS — runner-drift
 
 **Status: v1.2.0 BUILT, NOT YET RELEASED.** On branch
-`runner-version-deprecations`. 217/217 tests green, the byte-diff proof holds (33
+`runner-version-deprecations`. 219/219 tests green, the byte-diff proof holds (33
 of 38 scenarios identical, the five that moved are the two bugs this release
 fixes), and the real end-to-end runs were done against the live GitHub API. Needs
 the owner to open the PR, publish to npm and cut the tag.
@@ -12,14 +12,18 @@ the owner to open the PR, publish to npm and cut the tag.
 
 ## NEXT STEPS (owner, from the phone)
 
-Same ETARGET dance as 1.1.0, because `action.yml`'s `version` input now defaults
-to `1.2.0` and the CI step `uses: ./` installs exactly that from npm:
+Mostly the same as 1.1.0, but the action is now actually tested before publish:
+the new `Pack` + `uses: ./ (package:)` steps install the tarball the job just
+built, so the composite body is proven green on the PR. Only the deliberate
+registry-spec step still races npm.
 
-1. Open the PR from `runner-version-deprecations`. The `test`, `live`, `guard`
-   and the new `runners` jobs should all be green. The "published action" step
-   inside `test` will fail with `ETARGET No matching version found for
-   runner-drift@1.2.0` until step 2. That is expected pre-publish, not a
-   regression.
+1. Open the PR from `runner-version-deprecations`. `test`, `live`, `guard` and
+   the new `runners` jobs should be green, including the composite action against
+   the local tarball. The **"published action"** step inside `test` will still
+   fail with `ETARGET No matching version found for runner-drift@1.2.0` until
+   step 2, because it deliberately requests a registry spec — that is the only
+   way to reproduce the npx-CWD collision 1.0.2 fixed. Expected pre-publish, not
+   a regression.
 2. `npm publish` from the merged `main` (OIDC provenance is already wired, see
    `e7ee2e3`).
 3. Poll `npm view runner-drift@1.2.0 version` until it resolves (LESSONS
@@ -99,13 +103,22 @@ endpoints.
 - **`src/http.mjs`**. A `401` is its own error code with a set-GITHUB_TOKEN hint
   instead of a bare `Unexpected HTTP 401`; the user-agent version was corrected
   (it still said 1.0.2 throughout 1.1.0).
-- **`action.yml`**. `fail-on-deprecation` input, `version` default 1.2.0, and the
-  `github-token` description no longer claims "rate limit only".
+- **`action.yml`**. `fail-on-deprecation` input, `version` default 1.2.0, a
+  `github-token` description that no longer claims "rate limit only", a hardened
+  `abs()` (Git Bash on `windows-latest` hands it `D:\a\_temp\…`, which was not
+  recognised as absolute, so `$PWD` was glued onto the front), and a new `package`
+  input so CI can run the composite body against a locally built tarball rather
+  than a version that is not on npm yet.
 - **`.github/workflows/ci.yml`**. New `runners` job. It asserts the two
   documented outcomes for `github.token` (refused with the permission named, or
   an empty fleet) and that `--repo` + `--org` is exit 2. `permissions:` has no
   `administration` scope, so a refusal is the expected path and the job proves
-  the degradation rather than pretending to check a fleet.
+  the degradation rather than pretending to check a fleet. Plus a `Pack` step and
+  a `uses: ./` step with `package:` pointing at that tarball, which finally puts
+  the composite action under test before publish — LESSONS 2026-09-01, since the
+  step body is the one surface `node --test` cannot reach. The registry-spec
+  `uses: ./` step stays alongside it: only a registry spec reproduces the
+  npx-resolves-the-CWD collision that 1.0.2 fixed.
 - **Two bugs older than this release**, both found by auditing rather than
   reading. `--no-summary` and `--no-update-lock` have been documented since 1.0.0
   and never parsed, because `parseArgs` has no `--no-` negation; every existing
@@ -133,7 +146,7 @@ endpoints.
 
 ### VERIFIED, all run for real on 2026-09-09
 
-- `node --test` -> **217 tests, 217 pass, 0 fail**, fully offline. The 137
+- `node --test` -> **219 tests, 219 pass, 0 fail**, fully offline. The 137
   pre-existing tests are unmodified.
 - **Byte-diff proof.** A harness ran `init`, `guard` and `plan` across 38
   scenarios (every flag combination, every error path, every `--json` payload,
@@ -180,6 +193,17 @@ endpoints.
   (LESSONS 2026-09-01): `runner-drift --version` -> 1.2.0, `--help` shows
   `runners`, `import('runner-drift')` -> 98 exports including the whole runner
   lane, and a live `runners` run works from the installed bin.
+- **The composite action, executed for real.** `action.yml`'s own `run:` body
+  extracted and run with GitHub's env vars faked, across all seven input
+  combinations including two real tarball installs: correct exit codes, seven
+  annotations, repo-relative annotation paths, step summary written, `lock-file`
+  output set, no `Unknown option` and no silent npx no-op. This is the technique
+  that found the absolute-path bug, by running the action rather than reading it.
+- **README shape checks.** The three fenced output blocks in the `runners` section
+  are byte-compared against real CLI output, and the documented `runners --json`
+  block is key-compared against a real survey (a test, so it cannot drift). Code
+  fences balance, all 5 tables are well formed, both internal anchors resolve
+  under `github-slugger`'s rules.
 - **YAML.** `action.yml` and `ci.yml` both parse with `yaml.safe_load`;
   `action.yml`'s description is 113 characters (under the 125 Marketplace limit);
   the new CI assertions were extracted from the YAML and executed for real, all
@@ -255,7 +279,7 @@ endpoints.
 4. Handles reality — **met**. Bad flag values, both scope flags at once, no scope,
    401, 403, 404 on the listing, 404 on a version, rate limit, network failure,
    malformed payload, empty fleet, null version, and a fleet past the page cap.
-5. Tests — **met**. `node --test`, 217 passing, offline.
+5. Tests — **met**. `node --test`, 219 passing, offline.
 6. Publish-ready packaging — **met**, verified from a clean install.
 7. README a stranger can follow — **met**. New section 5 with real output, the
    status table, the permission table, the lint-job snippet, the who-is-at-risk
