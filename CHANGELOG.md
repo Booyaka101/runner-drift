@@ -35,9 +35,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
   Enforcement dates, from the
   [2026-06-12 timeline](https://github.blog/changelog/2026-06-12-github-actions-minimum-version-enforcement-timeline-for-self-hosted-runners/):
-  GHEC with Data Residency fully enforced 2026-07-31 (brownouts from 2026-06-29),
-  GHEC fully enforced 2026-09-25 (brownouts from 2026-08-24). **GitHub Enterprise
-  Server is not covered**, and the report says so on every run.
+  GHEC with Data Residency was fully enforced on 2026-07-31 (brownouts from
+  2026-06-29). On GHEC the brownouts have been running since 2026-08-24 and full
+  enforcement lands 2026-09-25. **GitHub Enterprise Server is not covered**, and
+  the report says so on every run.
 
 - **`--fail-on-deprecation <days>`** on `runners` and on `guard`. It sets the
   classification window and makes it count against the exit code; without it the

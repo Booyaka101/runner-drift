@@ -191,8 +191,9 @@ built the machine. The **agent** one does. GitHub requires each new
 `actions/runner` release to be installed within 30 days of publication, and the
 docs state the consequence plainly: *"If you do not perform a software update
 within 30 days, the GitHub Actions service will not queue jobs to your runner."*
-Full enforcement on GitHub Enterprise Cloud was 2026-09-25 with brownouts from
-2026-08-24, and GHEC with Data Residency was enforced on 2026-07-31
+On GitHub Enterprise Cloud the **brownouts have been running since 2026-08-24**
+and full enforcement lands **2026-09-25**. GHEC with Data Residency was enforced
+on 2026-07-31
 ([timeline](https://github.blog/changelog/2026-06-12-github-actions-minimum-version-enforcement-timeline-for-self-hosted-runners/)).
 GitHub Enterprise Server is not covered.
 
