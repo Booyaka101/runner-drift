@@ -1,7 +1,7 @@
 # PROGRESS — runner-drift
 
 **Status: v1.2.0 BUILT, NOT YET RELEASED.** On branch
-`runner-version-deprecations`. 216/216 tests green, the byte-diff proof holds (33
+`runner-version-deprecations`. 217/217 tests green, the byte-diff proof holds (33
 of 38 scenarios identical, the five that moved are the two bugs this release
 fixes), and the real end-to-end runs were done against the live GitHub API. Needs
 the owner to open the PR, publish to npm and cut the tag.
@@ -110,9 +110,12 @@ endpoints.
   reading. `--no-summary` and `--no-update-lock` have been documented since 1.0.0
   and never parsed, because `parseArgs` has no `--no-` negation; every existing
   test set `{ 'update-lock': false }` on `runGuard` directly and so never touched
-  the parse layer. And `file=` in every workflow annotation used the platform
-  separator, so on `windows-latest` the retirement annotations landed on the step
-  instead of the `runs-on:` line they named.
+  the parse layer. And `file=` in every workflow annotation was a path GitHub
+  cannot resolve — absolute, because `action.yml` passes `--workflows` absolutely,
+  and backslash-separated on Windows — so 1.1.0's headline file annotations
+  attached to the step instead of the line for everyone using the action. New
+  `annotationPath()` relativises against `$GITHUB_WORKSPACE` and normalises
+  separators, fixing both lanes.
 - **The workflow join.** `extractRunsOnTargets()` in `src/detect.mjs` keeps each
   `runs-on:` label SET together, which the existing flat `labelSites` cannot do
   (it is one entry per label and drops `self-hosted` outright). `runners` matches
@@ -130,7 +133,7 @@ endpoints.
 
 ### VERIFIED, all run for real on 2026-09-09
 
-- `node --test` -> **216 tests, 216 pass, 0 fail**, fully offline. The 137
+- `node --test` -> **217 tests, 217 pass, 0 fail**, fully offline. The 137
   pre-existing tests are unmodified.
 - **Byte-diff proof.** A harness ran `init`, `guard` and `plan` across 38
   scenarios (every flag combination, every error path, every `--json` payload,
@@ -252,7 +255,7 @@ endpoints.
 4. Handles reality — **met**. Bad flag values, both scope flags at once, no scope,
    401, 403, 404 on the listing, 404 on a version, rate limit, network failure,
    malformed payload, empty fleet, null version, and a fleet past the page cap.
-5. Tests — **met**. `node --test`, 216 passing, offline.
+5. Tests — **met**. `node --test`, 217 passing, offline.
 6. Publish-ready packaging — **met**, verified from a clean install.
 7. README a stranger can follow — **met**. New section 5 with real output, the
    status table, the permission table, the lint-job snippet, the who-is-at-risk

@@ -28,6 +28,7 @@ export {
   planReport,
   stepSummaryMarkdown,
   annotation,
+  annotationPath,
   annotations,
   countdown,
   dateWithCountdown,

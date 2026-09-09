@@ -90,12 +90,25 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
-- **`file=` in a workflow annotation used the platform separator.** GitHub
-  matches it against the repo tree, which is POSIX-separated, so on
-  `windows-latest` every `--fail-on-retirement` annotation since 1.1.0 landed on
-  the step rather than on the `runs-on:` line it named. Converted in
-  `annotation()`, which fixes both lanes. No effect on Linux or macOS runners,
-  where `path.join` already yields `/`.
+- **`file=` in a workflow annotation was not a path GitHub could resolve, so
+  1.1.0's file annotations never actually worked through the action.** GitHub
+  matches the value against the repository tree, which means repo-relative and
+  POSIX-separated. Two things broke that, and neither surfaced as an error
+  because a path GitHub cannot match is not rejected, it just silently attaches
+  the annotation to the step instead of the line:
+  - `action.yml` passes `--workflows` as an **absolute** path (it has to, since
+    `npx` runs from a neutral directory), so every path `detect()` built from it
+    was absolute. Anyone using `fail-on-retirement` through
+    `uses: Booyaka101/runner-drift@v1` — the documented way — got step-level
+    annotations, not the "annotation on the exact `runs-on:` line" the README
+    promises. Only a direct `run: npx runner-drift guard …` with the default
+    relative path ever worked.
+  - on `windows-latest`, `path.join` yields backslashes.
+
+  Both are handled by a new `annotationPath()` that relativises against
+  `$GITHUB_WORKSPACE` and converts separators, used by `annotation()` so it fixes
+  the image lane and the runner lane at once. A path outside the workspace is left
+  as it was, there being nothing better to offer.
 
 - **`--no-summary` and `--no-update-lock` never worked.** Both have been in the
   README table and in `--help` since 1.0.0, and both exited 2 with
@@ -190,12 +203,13 @@ rather than being contorted through `dateWithCountdown`.
 across 38 scenarios before this release and again after, including every JSON
 payload, every exit code and the self-hosted `::notice`. **33 of the 38 are
 byte-identical**, apart from the new lines in `--help`. The five that moved are
-the two fixes above and nothing else: `guard --no-update-lock` used to print
-`Unknown option` and exit 2, and four retirement scenarios now emit `file=a/b.yml`
-where they emitted `file=a\b.yml` — a Windows-only difference, since the
-transcripts were recorded on Windows and `path.join` already yields `/` on the
-Linux runners this actually runs on. All 137 pre-1.2.0 tests pass unmodified, and
-the suite is now 216.
+the two fixes above and nothing else:
+
+- `guard --no-update-lock`, which used to print `Unknown option` and exit 2.
+- four retirement scenarios whose `file=` went from an absolute,
+  platform-separated path to `file=test/fixtures/workflows-retirement/pinned.yml`.
+
+All 137 pre-1.2.0 tests pass unmodified, and the suite is now 217.
 
 **Enterprise scope is absent because there is nothing to call.** The 2026-09-03
 changelog says the endpoint is callable at repository, organization *or

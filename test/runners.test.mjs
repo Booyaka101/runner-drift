@@ -26,6 +26,7 @@ import {
 } from '../src/runners.mjs';
 import {
   annotation,
+  annotationPath,
   markdownTable,
   runnersReport,
   runnersAnnotations,
@@ -1172,11 +1173,50 @@ test('a due group names the jobs it serves, and annotates the runs-on line', asy
   assert.match(onFile[0], /runtime support ends 2026-09-24 \(16 days\)/);
 });
 
-test('a file= path is POSIX even when built on Windows', () => {
+/**
+ * GitHub matches `file=` against the repository tree, so a path that is absolute
+ * or backslash-separated silently attaches the annotation to the step instead of
+ * the line. Both happen on a real runner: `action.yml` passes `--workflows` as an
+ * absolute path, and `path.join` yields backslashes on `windows-latest`. Neither
+ * is an error, which is why it went unnoticed from 1.1.0.
+ */
+test('a file= path is made repo-relative and POSIX-separated', () => {
+  const p = (file, env) => annotationPath(file, env);
+  assert.equal(p('a\\b\\c.yml', {}), 'a/b/c.yml', 'separators');
+  assert.equal(p('.github/workflows/ci.yml', {}), '.github/workflows/ci.yml', 'already relative');
+
+  const root = path.resolve('/work/repo');
+  assert.equal(
+    p(path.join(root, '.github', 'workflows', 'ci.yml'), { GITHUB_WORKSPACE: root }),
+    '.github/workflows/ci.yml',
+    'the absolute path the action passes',
+  );
+  // Outside the workspace there is nothing better to offer than what we were given.
+  const outside = path.resolve('/somewhere/else/ci.yml');
+  assert.equal(p(outside, { GITHUB_WORKSPACE: root }), outside.replaceAll('\\', '/'));
+
   assert.match(
     annotation('error', 'T', 'm', { file: 'a\\b\\c.yml', line: 1, col: 2 }),
     /^::error file=a\/b\/c\.yml,line=1,col=2,/,
   );
+});
+
+test('the retirement lane gets the same path treatment', async () => {
+  // The image lane annotates from an absolute --workflows too, via the action.
+  const { retirementFindings, retirementAnnotations } = await import('../src/report.mjs');
+  const root = path.resolve('/work/repo');
+  const saved = process.env.GITHUB_WORKSPACE;
+  process.env.GITHUB_WORKSPACE = root;
+  try {
+    const findings = retirementFindings(
+      [{ label: 'macos-14', file: path.join(root, '.github', 'workflows', 'ci.yml'), line: 12, col: 14 }],
+      { now: NOW, days: 3650 },
+    );
+    assert.match(retirementAnnotations(findings)[0], /^::error file=\.github\/workflows\/ci\.yml,line=12,col=14,/);
+  } finally {
+    if (saved === undefined) delete process.env.GITHUB_WORKSPACE;
+    else process.env.GITHUB_WORKSPACE = saved;
+  }
 });
 
 test('an OK or unknown group annotates no files', async () => {

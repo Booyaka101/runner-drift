@@ -9,6 +9,7 @@
  */
 
 import { appendFile } from 'node:fs/promises';
+import path from 'node:path';
 import { daysUntil } from './dates.mjs';
 import { deadlineFor, retirementStatus } from './labels.mjs';
 import {
@@ -174,15 +175,36 @@ function escapeAnnotation(s) {
 }
 
 /**
+ * A `file=` value GitHub can actually resolve.
+ *
+ * It matches the value against the repository tree, so the path has to be
+ * repo-relative and POSIX-separated. Two ways that goes wrong on a real runner
+ * and neither is obvious, because a bad path is not an error — the annotation
+ * just quietly attaches to the step instead of the line:
+ *   - `action.yml` passes `--workflows` as an absolute path, so every path
+ *     `detect()` builds from it is absolute too.
+ *   - on a Windows runner `path.join` yields backslashes.
+ */
+export function annotationPath(file, env = process.env) {
+  const raw = String(file ?? '');
+  const root = env.GITHUB_WORKSPACE || process.cwd();
+  let out = raw;
+  if (path.isAbsolute(raw)) {
+    const rel = path.relative(root, raw);
+    // Outside the workspace: nothing better to offer, so leave it alone rather
+    // than emit a `../..` path GitHub would reject either way.
+    if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) out = rel;
+  }
+  return out.replaceAll('\\', '/');
+}
+
+/**
  * One workflow-log annotation. `site` ({file,line,col}) makes it a file
  * annotation; without one GitHub attributes it to the step.
  */
 export function annotation(kind, title, message, site = null) {
-  // GitHub matches `file=` against the repo tree, which is POSIX-separated, so a
-  // path built by path.join on a Windows runner has to be converted or the
-  // annotation silently lands on the step instead of the line.
   const where = site
-    ? `file=${escapeAnnotation(String(site.file).replaceAll('\\', '/'))},line=${site.line},col=${site.col},`
+    ? `file=${escapeAnnotation(annotationPath(site.file))},line=${site.line},col=${site.col},`
     : '';
   return `::${kind} ${where}title=${escapeAnnotation(title)}::${escapeAnnotation(message)}`;
 }
@@ -272,7 +294,7 @@ export function retirementSummaryMarkdown(findings) {
     const s = f.status;
     return [
       `\`${s.label}\``,
-      `\`${f.file}:${f.line}\``,
+      `\`${annotationPath(f.file)}:${f.line}\``,
       s.nextBrownout ? dateWithCountdown(s.nextBrownout, s.daysToBrownout) : '—',
       s.retired
         ? `${s.fullyUnsupported} (retired ${Math.abs(s.daysToUnsupported)} days ago)`
@@ -400,7 +422,7 @@ export function runnerGroupDetail(group, { windowDays, sites = true } = {}) {
   if (sites) {
     for (const site of dueSites(group)) {
       lines.push(
-        `serves ${site.file}:${site.line} (runs-on: ${site.labels.join(', ')}) — ${nameList(site.runners, 3)}`,
+        `serves ${annotationPath(site.file)}:${site.line} (runs-on: ${site.labels.join(', ')}) — ${nameList(site.runners, 3)}`,
       );
     }
   }
