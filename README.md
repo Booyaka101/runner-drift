@@ -219,10 +219,11 @@ note: self-hosted runners auto-update by default — at risk are the ones regist
 note: enforcement covers github.com and GitHub Enterprise Cloud, not GitHub Enterprise Server
 source: GET /orgs/acme/actions/runners/deprecations/2.335.1
 source: GET /orgs/acme/actions/runners/deprecations/2.337.0
+runner-drift: 2 self-hosted runner(s) on 2.335.1 lose runtime support on 2026-09-24 (16 days) and --fail-on-deprecation 30 is set.
 ```
 
-That exits 1, with an `::error` annotation and the same rows as a table in the
-job summary. Drop `--fail-on-deprecation` and the annotation becomes a
+That last line goes to stderr and the run exits 1, with an `::error` annotation
+and the same rows as a table in the job summary. Drop `--fail-on-deprecation` and the annotation becomes a
 `::warning` and the exit code goes back to 0. Only that flag can change the exit
 code, and `EXPIRED` is the one exception: a date already past always fails, the
 same rule the image lane uses for a label past its retirement.

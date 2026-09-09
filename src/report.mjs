@@ -308,6 +308,16 @@ const RUNNER_BADGE = {
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
+/**
+ * `x2` / `x2 (1 offline)`. Whether the group is in service changes how urgent it
+ * is — an EXPIRED version on a runner still reporting online is the case that
+ * matters most, and an offline one may just need recreating from a newer image.
+ */
+function runnerCount(group) {
+  const offline = Number.isFinite(group.online) ? group.count - group.online : 0;
+  return offline > 0 ? `x${group.count} (${offline} offline)` : `x${group.count}`;
+}
+
 /** At most five names, then a count — a 200-runner fleet is one version group. */
 function nameList(names, max = 5) {
   if (names.length <= max) return names.join(', ');
@@ -397,7 +407,7 @@ export function runnersReport(survey) {
         ? `  (published ${g.publishedAt.slice(0, 10)})`
         : '';
     out.push(
-      `  ${g.status.padEnd(statusWidth)}${(g.version ?? '(none)').padEnd(versionWidth)}x${g.count}  ${nameList(g.names)}${published}`,
+      `  ${g.status.padEnd(statusWidth)}${(g.version ?? '(none)').padEnd(versionWidth)}${runnerCount(g)}  ${nameList(g.names)}${published}`,
     );
     const indent = ' '.repeat(2 + statusWidth);
     for (const line of runnerGroupDetail(g, { windowDays: survey.windowDays })) {
@@ -472,7 +482,7 @@ export function runnersSummaryMarkdown(survey) {
   lines.push('');
   const rows = survey.groups.map((g) => [
     `\`${g.version ?? '(none)'}\``,
-    `${g.count} (${nameList(g.names, 3)})`,
+    `${runnerCount(g)} ${nameList(g.names, 3)}`,
     RUNNER_BADGE[g.status] ?? g.status,
     g.runtime ? dateWithCountdown(g.runtime.at, g.runtime.days) : '—',
     g.registration ? dateWithCountdown(g.registration.at, g.registration.days) : '—',

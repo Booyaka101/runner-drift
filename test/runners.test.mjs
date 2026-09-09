@@ -338,6 +338,10 @@ test('an entirely current fleet is OK and never fails', async () => {
   assert.equal(s.groups[0].status, RUNNER_STATUS.OK);
   assert.equal(s.groups[0].count, 2);
   assert.equal(s.failing, false);
+  // auto-2 is offline in the fixture, and the row says so: an offline runner on
+  // a dead version is a different job from an online one.
+  assert.equal(s.groups[0].online, 1);
+  assert.match(runnersReport(s), /OK {12}2\.337\.0 {2}x2 \(1 offline\) {2}auto-1, auto-2/);
 });
 
 test('UNKNOWN-VERSION never fails, even with the flag set', async () => {
@@ -666,8 +670,8 @@ test('the step summary is a six-column table with the notes underneath', async (
   const md = runnersSummaryMarkdown(await survey(fleets.arc, { days: 30, failOn: true }));
   assert.match(md, /^## runner-drift — self-hosted runners/);
   assert.match(md, /\| Version \| Runners \| Status \| Runtime ends \| Registration ends \| Source \|/);
-  assert.match(md, /\| `2\.335\.1` \| 2 \(arc-linux-1, arc-linux-2\) \| 🟠 RUNTIME-DUE \| 2026-09-24 \(16 days\) \| — \|/);
-  assert.match(md, /\| `2\.337\.0` \| 1 \(build-mac-1\) \| ⚪ OK \| — \| — \| /);
+  assert.match(md, /\| `2\.335\.1` \| x2 arc-linux-1, arc-linux-2 \| 🟠 RUNTIME-DUE \| 2026-09-24 \(16 days\) \| — \|/);
+  assert.match(md, /\| `2\.337\.0` \| x1 build-mac-1 \| ⚪ OK \| — \| — \| /);
   assert.match(md, /^> self-hosted runners auto-update by default/m);
   assert.match(md, /not GitHub Enterprise Server — see \[the enforcement timeline\]/);
 });
@@ -779,6 +783,12 @@ test('runners --json shapes the whole survey', async () => {
   // --json keeps the full timestamp; the text report trims it to a date.
   assert.equal(parsed.groups[0].runtime.at, '2026-09-24T15:30:55Z');
   assert.equal(parsed.groups[0].runtime.days, 16);
+  // Fleet health rides along for automation even though the text report only
+  // surfaces the offline count.
+  assert.equal(parsed.groups[0].online, 2);
+  assert.equal(parsed.groups[0].busy, 1);
+  assert.equal(parsed.groups[0].ephemeral, true);
+  assert.deepEqual(parsed.groups[0].labels, ['self-hosted', 'Linux', 'X64']);
   assert.equal(parsed.ghesNote, 'enforcement covers github.com and GitHub Enterprise Cloud, not GitHub Enterprise Server');
   assert.match(parsed.source, /^https:\/\/github\.blog\/changelog\/2026-06-12-/);
 });
