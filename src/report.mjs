@@ -1,17 +1,36 @@
 /**
  * Output formatting: plain-text plan report, GitHub step-summary markdown,
  * and ::warning workflow annotations.
+ *
+ * Two lanes share every primitive below — hosted-image retirements (dates from
+ * the table in labels.mjs) and self-hosted runner-version deprecations (dates
+ * from the API, via runners.mjs). Countdown wording, annotation escaping and
+ * table rendering are written once here and called from both.
  */
 
 import { appendFile } from 'node:fs/promises';
+import { daysUntil } from './dates.mjs';
 import { deadlineFor, retirementStatus } from './labels.mjs';
+import {
+  MINIMUM_REGISTRATION_VERSION,
+  RUNNER_STATUS,
+  SURVEY_STATUS,
+  belowRegistrationMinimum,
+  endpointLabel,
+  statusFails,
+} from './runners.mjs';
 
-const MS_PER_DAY = 86_400_000;
+export { daysUntil };
 
-export function daysUntil(dateStr, now = new Date()) {
-  const target = Date.parse(`${dateStr}T00:00:00Z`);
-  if (!Number.isFinite(target)) return null;
-  return Math.round((target - now.getTime()) / MS_PER_DAY);
+/** `(82 days)` / `(60 days ago)` — the countdown suffix both lanes print. */
+export function countdown(days) {
+  if (days === null || days === undefined) return '';
+  return days < 0 ? `(${Math.abs(days)} days ago)` : `(${days} days)`;
+}
+
+/** `2026-11-02 (82 days)`. A full ISO date-time is trimmed to its date. */
+export function dateWithCountdown(date, days) {
+  return `${String(date ?? '').slice(0, 10)} ${countdown(days)}`.trim();
 }
 
 function joinVersions(list) {
@@ -41,14 +60,14 @@ export function deadlineLines(label, now = new Date()) {
   );
   const left = daysUntil(dl.fullyUnsupported, now);
   const untilBrownout = brownout ? daysUntil(brownout, now) : null;
-  const countdown =
+  const countdownLine =
     left === null
       ? null
       : left > 0
         ? `${left} days left${untilBrownout !== null && untilBrownout > 0 ? ` (${untilBrownout} until the first brownout)` : ''}`
         : `retired ${Math.abs(left)} days ago`;
-  if (countdown) {
-    lines.push(`${countdown} — deprecation began ${dl.deprecationStart}; see ${dl.source}`);
+  if (countdownLine) {
+    lines.push(`${countdownLine} — deprecation began ${dl.deprecationStart}; see ${dl.source}`);
   }
   if (dl.brownoutWindow && dl.brownouts?.length) {
     lines.push(`brownout windows (${dl.brownoutWindow}): ${dl.brownouts.join(', ')}`);
@@ -135,19 +154,16 @@ export function stepSummaryMarkdown({
     return `${lines.join('\n')}\n`;
   }
 
-  lines.push('| Tool | Locked | Now | Change | Shipped by |');
-  lines.push('| --- | --- | --- | --- | --- |');
-  for (const d of changed) {
+  const rows = changed.map((d) => {
     const a = attribution[d.tool];
     const shipped = a
       ? `[${a.imageVersion ?? a.sha.slice(0, 7)}](${a.url})${a.exact ? '' : ' _(approx)_'}`
       : '—';
     const badge = SEVERITY_BADGE[d.severity] ?? d.severity;
     const change = d.detail === d.severity.toUpperCase() ? badge : `${badge} — ${d.detail}`;
-    lines.push(
-      `| \`${d.tool}\` | ${d.from.join(', ') || '—'} | ${d.to.join(', ') || '—'} | ${change} | ${shipped} |`,
-    );
-  }
+    return [`\`${d.tool}\``, d.from.join(', ') || '—', d.to.join(', ') || '—', change, shipped];
+  });
+  lines.push(...markdownTable(['Tool', 'Locked', 'Now', 'Change', 'Shipped by'], rows));
   lines.push('');
   lines.push(`Lock file \`${lockFile}\` updated to image \`${toImage}\`.`);
   return `${lines.join('\n')}\n`;
@@ -155,6 +171,17 @@ export function stepSummaryMarkdown({
 
 function escapeAnnotation(s) {
   return String(s).replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A');
+}
+
+/**
+ * One workflow-log annotation. `site` ({file,line,col}) makes it a file
+ * annotation; without one GitHub attributes it to the step.
+ */
+export function annotation(kind, title, message, site = null) {
+  const where = site
+    ? `file=${escapeAnnotation(site.file)},line=${site.line},col=${site.col},`
+    : '';
+  return `::${kind} ${where}title=${escapeAnnotation(title)}::${escapeAnnotation(message)}`;
 }
 
 /** `::warning ...` lines for the workflow log. */
@@ -167,12 +194,21 @@ export function annotations(diffs, attribution = {}, label = '') {
       const sev = d.severity.toUpperCase();
       const detail = d.detail === sev ? sev : `${sev}: ${d.detail}`;
       const msg = `${d.tool} drifted on ${label}: ${d.from.join(', ') || '(absent)'} -> ${d.to.join(', ') || '(absent)'} (${detail})${where}`;
-      return `::warning title=runner-drift: ${escapeAnnotation(d.tool)} ${d.severity}::${escapeAnnotation(msg)}`;
+      return annotation('warning', `runner-drift: ${d.tool} ${d.severity}`, msg);
     });
 }
 
 export function notice(message) {
-  return `::notice title=runner-drift::${escapeAnnotation(message)}`;
+  return annotation('notice', 'runner-drift', message);
+}
+
+/** Header, separator and body rows of a GitHub-flavoured markdown table. */
+export function markdownTable(headers, rows) {
+  return [
+    `| ${headers.join(' | ')} |`,
+    `| ${headers.map(() => '---').join(' | ')} |`,
+    ...rows.map((r) => `| ${r.join(' | ')} |`),
+  ];
 }
 
 /**
@@ -198,9 +234,9 @@ function retirementMessage(s) {
     return `${s.label} retired ${Math.abs(s.daysToUnsupported)} days ago — fully unsupported since ${s.fullyUnsupported}. ${migrate} See ${s.source}`;
   }
   const brownout = s.nextBrownout
-    ? `; next brownout ${s.nextBrownout} (${s.daysToBrownout} days)`
+    ? `; next brownout ${dateWithCountdown(s.nextBrownout, s.daysToBrownout)}`
     : '';
-  return `${s.label} is fully unsupported on ${s.fullyUnsupported} (${s.daysToUnsupported} days)${brownout}. ${migrate} See ${s.source}`;
+  return `${s.label} is fully unsupported on ${dateWithCountdown(s.fullyUnsupported, s.daysToUnsupported)}${brownout}. ${migrate} See ${s.source}`;
 }
 
 /**
@@ -218,28 +254,33 @@ export function retirementAnnotations(findings) {
       kind = 'warning';
       title = `runner-drift: ${s.label} deprecation`;
     }
-    return `::${kind} file=${escapeAnnotation(f.file)},line=${f.line},col=${f.col},title=${escapeAnnotation(title)}::${escapeAnnotation(retirementMessage(s))}`;
+    return annotation(kind, title, retirementMessage(s), f);
   });
 }
 
 /** Step-summary table for retirement findings. */
 export function retirementSummaryMarkdown(findings) {
-  const lines = [];
-  lines.push('## runner-drift — retirement');
-  lines.push('');
-  lines.push('| Label | Where | Next brownout | Fully unsupported | Migrate to | Source |');
-  lines.push('| --- | --- | --- | --- | --- | --- |');
-  for (const f of findings) {
+  const rows = findings.map((f) => {
     const s = f.status;
-    const brownout = s.nextBrownout ? `${s.nextBrownout} (${s.daysToBrownout} days)` : '—';
-    const unsupported = s.retired
-      ? `${s.fullyUnsupported} (retired ${Math.abs(s.daysToUnsupported)} days ago)`
-      : `${s.fullyUnsupported} (${s.daysToUnsupported} days)`;
-    const migrate = s.migrateTo.map((m) => `\`${m}\``).join(', ');
-    lines.push(
-      `| \`${s.label}\` | \`${f.file}:${f.line}\` | ${brownout} | ${unsupported} | ${migrate} | [${s.sourceRef}](${s.source}) |`,
-    );
-  }
+    return [
+      `\`${s.label}\``,
+      `\`${f.file}:${f.line}\``,
+      s.nextBrownout ? dateWithCountdown(s.nextBrownout, s.daysToBrownout) : '—',
+      s.retired
+        ? `${s.fullyUnsupported} (retired ${Math.abs(s.daysToUnsupported)} days ago)`
+        : dateWithCountdown(s.fullyUnsupported, s.daysToUnsupported),
+      s.migrateTo.map((m) => `\`${m}\``).join(', '),
+      `[${s.sourceRef}](${s.source})`,
+    ];
+  });
+  const lines = [
+    '## runner-drift — retirement',
+    '',
+    ...markdownTable(
+      ['Label', 'Where', 'Next brownout', 'Fully unsupported', 'Migrate to', 'Source'],
+      rows,
+    ),
+  ];
   return `${lines.join('\n')}\n`;
 }
 
@@ -253,4 +294,199 @@ export async function writeStepSummary(markdown) {
   } catch {
     return false;
   }
+}
+
+/* --------------------------------------------- self-hosted runner versions */
+
+const RUNNER_BADGE = {
+  [RUNNER_STATUS.EXPIRED]: '🔴 EXPIRED',
+  [RUNNER_STATUS.RUNTIME_DUE]: '🟠 RUNTIME-DUE',
+  [RUNNER_STATUS.REGISTRATION_DUE]: '🟡 REGISTRATION-DUE',
+  [RUNNER_STATUS.UNKNOWN_VERSION]: '❔ UNKNOWN-VERSION',
+  [RUNNER_STATUS.OK]: '⚪ OK',
+};
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
+/** At most five names, then a count — a 200-runner fleet is one version group. */
+function nameList(names, max = 5) {
+  if (names.length <= max) return names.join(', ');
+  return `${names.slice(0, max).join(', ')} and ${names.length - max} more`;
+}
+
+/**
+ * The detail lines under one version row: what ends when, and why this group is
+ * probably not something you fix by hand.
+ */
+export function runnerGroupDetail(group, { windowDays } = {}) {
+  const lines = [];
+  const { runtime, registration } = group;
+  // On an OK row the date is reassurance, so it says why rather than restating
+  // the consequence; on a due or expired row the consequence is the point.
+  const ok = group.status === RUNNER_STATUS.OK;
+  const beyond = Number.isFinite(windowDays) ? `beyond the ${windowDays}-day window` : 'not yet due';
+  if (runtime) {
+    lines.push(
+      runtime.past
+        ? `runtime support ended ${dateWithCountdown(runtime.at, runtime.days)} — jobs are no longer queued to it`
+        : `runtime support ends ${dateWithCountdown(runtime.at, runtime.days)} — ${ok ? beyond : 'jobs stop being queued'}`,
+    );
+  }
+  if (registration) {
+    lines.push(
+      registration.past
+        ? `registration ended ${dateWithCountdown(registration.at, registration.days)} — it cannot reregister`
+        : `registration ends ${dateWithCountdown(registration.at, registration.days)} — ${ok ? beyond : 'cannot register or reregister'}`,
+    );
+  }
+  if (group.status === RUNNER_STATUS.UNKNOWN_VERSION) {
+    lines.push(
+      group.version === null
+        ? 'no version reported — the runner has never connected, so there is nothing to date'
+        : `the deprecations API does not recognise version ${group.version} — reporting only, never failing`,
+    );
+    if (belowRegistrationMinimum(group.version)) {
+      lines.push(
+        `${group.version} is below the ${MINIMUM_REGISTRATION_VERSION} registration minimum — it cannot register or reregister`,
+      );
+    }
+  }
+  if (group.status === RUNNER_STATUS.OK && !runtime && !registration && group.version !== null) {
+    lines.push('no end date returned — this version is current');
+  }
+  if (group.status !== RUNNER_STATUS.OK && group.status !== RUNNER_STATUS.UNKNOWN_VERSION && group.imagePinned) {
+    lines.push(
+      group.ephemeral
+        ? 'ephemeral runners — change the actions-runner-controller image tag, not the host'
+        : 'these look image-pinned; update the image or template, not the host',
+    );
+  }
+  return lines;
+}
+
+/** Plain-text `runners` report. Mirrors planReport()'s shape for the other lane. */
+export function runnersReport(survey) {
+  const out = [];
+  const head = `self-hosted runners — ${survey.scope.name}`;
+
+  if (survey.status !== SURVEY_STATUS.OK) {
+    out.push(head);
+    out.push(`${survey.status}  ${survey.message}`);
+    for (const line of survey.hint ?? []) {
+      out.push(`${' '.repeat(survey.status.length + 2)}${line}`);
+    }
+    return out.join('\n');
+  }
+
+  if (!survey.groups.length) {
+    out.push(`${head} (${plural(survey.totalCount ?? 0, 'runner')})`);
+    out.push('no self-hosted runners registered — nothing to check; GitHub-hosted runners are not affected');
+    out.push(`source: ${endpointLabel(survey.runnersUrl)}`);
+    return out.join('\n');
+  }
+
+  out.push(
+    `${head} (${plural(survey.totalCount, 'runner')}, ${plural(survey.groups.length, 'version')})`,
+  );
+
+  const statusWidth = Math.max(13, ...survey.groups.map((g) => g.status.length)) + 1;
+  const versionWidth = Math.max(...survey.groups.map((g) => (g.version ?? '(none)').length)) + 2;
+  for (const g of survey.groups) {
+    const published =
+      g.status === RUNNER_STATUS.OK && g.publishedAt
+        ? `  (published ${g.publishedAt.slice(0, 10)})`
+        : '';
+    out.push(
+      `  ${g.status.padEnd(statusWidth)}${(g.version ?? '(none)').padEnd(versionWidth)}x${g.count}  ${nameList(g.names)}${published}`,
+    );
+    const indent = ' '.repeat(2 + statusWidth);
+    for (const line of runnerGroupDetail(g, { windowDays: survey.windowDays })) {
+      out.push(`${indent}${line}`);
+    }
+  }
+
+  if (survey.truncated) {
+    out.push(`note: the runner listing was cut off at ${survey.totalCount} — this is a prefix of the fleet, not all of it`);
+  }
+  if (survey.groups.some((g) => g.status !== RUNNER_STATUS.OK)) {
+    out.push(`note: ${survey.autoUpdateNote}`);
+  }
+  out.push(`note: ${survey.ghesNote}`);
+  for (const source of [...new Set(survey.groups.filter((g) => g.source).map((g) => g.source))]) {
+    out.push(`source: ${source}`);
+  }
+  return out.join('\n');
+}
+
+/**
+ * Workflow-log annotations for a survey. A refused or unreachable endpoint is a
+ * ::warning so the log is not silently green; only a real deprecation escalates.
+ */
+export function runnersAnnotations(survey) {
+  if (survey.status !== SURVEY_STATUS.OK) {
+    return [
+      annotation(
+        'warning',
+        `runner-drift: ${survey.status}`,
+        [`${survey.message}.`, ...(survey.hint ?? [])].join(' '),
+      ),
+    ];
+  }
+  const lines = [];
+  for (const g of survey.groups) {
+    if (g.status === RUNNER_STATUS.OK) continue;
+    const fails = statusFails(g.status, { failOn: survey.failOn });
+    const kind = fails ? 'error' : g.status === RUNNER_STATUS.UNKNOWN_VERSION ? 'notice' : 'warning';
+    const detail = runnerGroupDetail(g, { windowDays: survey.windowDays }).join('; ');
+    const which = g.version
+      ? `${g.count} self-hosted runner(s) on ${g.version}`
+      : `${g.count} self-hosted runner(s) with no version reported`;
+    lines.push(
+      annotation(
+        kind,
+        `runner-drift: runner ${g.version ?? '(no version)'} ${g.status}`,
+        `${which} (${nameList(g.names)}): ${detail}. ${survey.ghesNote}.`,
+      ),
+    );
+  }
+  return lines;
+}
+
+/** Step-summary table for a survey. */
+export function runnersSummaryMarkdown(survey) {
+  const lines = ['## runner-drift — self-hosted runners', ''];
+  if (survey.status !== SURVEY_STATUS.OK) {
+    lines.push(`\`${survey.scope.name}\` — **${survey.status}**: ${survey.message}`);
+    for (const line of survey.hint ?? []) lines.push('', `> ${line}`);
+    return `${lines.join('\n')}\n`;
+  }
+  if (!survey.groups.length) {
+    lines.push(
+      `\`${survey.scope.name}\` has no self-hosted runners registered — nothing to check.`,
+    );
+    return `${lines.join('\n')}\n`;
+  }
+  lines.push(
+    `\`${survey.scope.name}\` — ${plural(survey.totalCount, 'runner')} on ${plural(survey.groups.length, 'version')}, window ${survey.windowDays} days.`,
+  );
+  lines.push('');
+  const rows = survey.groups.map((g) => [
+    `\`${g.version ?? '(none)'}\``,
+    `${g.count} (${nameList(g.names, 3)})`,
+    RUNNER_BADGE[g.status] ?? g.status,
+    g.runtime ? dateWithCountdown(g.runtime.at, g.runtime.days) : '—',
+    g.registration ? dateWithCountdown(g.registration.at, g.registration.days) : '—',
+    g.source ? `\`${g.source}\`` : '—',
+  ]);
+  lines.push(
+    ...markdownTable(
+      ['Version', 'Runners', 'Status', 'Runtime ends', 'Registration ends', 'Source'],
+      rows,
+    ),
+  );
+  lines.push('');
+  lines.push(`> ${survey.autoUpdateNote}`);
+  lines.push('>');
+  lines.push(`> ${survey.ghesNote} — see [the enforcement timeline](${survey.source}).`);
+  return `${lines.join('\n')}\n`;
 }

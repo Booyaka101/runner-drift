@@ -1,25 +1,215 @@
 # PROGRESS — runner-drift
 
-**Status: v1.1.0 PUBLISHED.** PR #1 merged to main (rebased, `00ea325`),
-`runner-drift@1.1.0` live on npm as `latest`, and CI on the merged commit is
-green on all five jobs including the `uses: ./` step that installs the
-published package on ubuntu, windows and macOS.
-
-Tagged `v1.1.0`, moved `v1` onto it, and cut the GitHub release, so
-`Booyaka101/runner-drift@v1` now serves the action.yml with the
-`fail-on-retirement` input. The Marketplace listing already exists from 1.0.1
-and picks up the new release; re-ticking it needs 2FA if it ever drops off.
-
-**Left to do:** wire `fail-on-retirement` into the guard steps of the 14 repos
-that already run runner-drift in CI. That is the dogfood pass from LESSONS
-2026-08-05, and it is what puts the October macos-14 brownouts on a countdown
-before they land.
+**Status: v1.2.0 BUILT, NOT YET RELEASED.** On branch
+`runner-version-deprecations`. 201/201 tests green, the byte-diff proof is clean,
+and the real end-to-end runs were done against the live GitHub API. Needs the
+owner to open the PR, publish to npm and cut the tag.
 
 - Repo: <https://github.com/Booyaka101/runner-drift>
-- npm: <https://www.npmjs.com/package/runner-drift> (latest: `1.1.0`)
-- Releases: `v1.0.0`–`v1.1.0`; moving tag `v1` → v1.1.0 (`0e4c775`)
+- npm: <https://www.npmjs.com/package/runner-drift> (latest published: `1.1.0`)
+- Releases: `v1.0.0`-`v1.1.0`; moving tag `v1` currently on v1.1.0
 
-Date: 2026-08-12
+## NEXT STEPS (owner, from the phone)
+
+Same ETARGET dance as 1.1.0, because `action.yml`'s `version` input now defaults
+to `1.2.0` and the CI step `uses: ./` installs exactly that from npm:
+
+1. Open the PR from `runner-version-deprecations`. The `test`, `live`, `guard`
+   and the new `runners` jobs should all be green. The "published action" step
+   inside `test` will fail with `ETARGET No matching version found for
+   runner-drift@1.2.0` until step 2. That is expected pre-publish, not a
+   regression.
+2. `npm publish` from the merged `main` (OIDC provenance is already wired, see
+   `e7ee2e3`).
+3. Poll `npm view runner-drift@1.2.0 version` until it resolves (LESSONS
+   2026-08-05: the registry lags `publish`), then re-run CI. All green.
+4. Tag `v1.2.0`, move `v1` onto it, cut the GitHub release with the 1.2.0
+   CHANGELOG entry as the notes. The Marketplace listing picks up new releases
+   automatically now that it exists (LESSONS 2026-08-20), so no 2FA step.
+5. Dogfood: add a `runner-versions` lint job to the repos that run runner-drift
+   **and** actually own self-hosted runners. It needs a PAT with administration
+   read, so it is only worth wiring where such a token already exists. On repos
+   with no self-hosted runners the command correctly reports 0 and exits 0, which
+   is a no-op job not worth adding.
+
+---
+
+## v1.2.0 (2026-09-09) — self-hosted runner agent versions
+
+### Phase 0 — every resource re-verified live before any code was written
+
+| Resource | Result |
+| --- | --- |
+| [changelog 2026-09-03](https://github.blog/changelog/2026-09-03-github-actions-early-september-2026-updates/) | Present as quoted: "A new REST API returns when registration and runtime support end for a given runner version", endpoint `GET /actions/runners/deprecations/{version}`, repository/organization/enterprise scopes, fields `runner_version` / `runtime_deprecates_at` / `registration_deprecates_at`. Dated 2026-09-03 |
+| [REST docs, self-hosted-runners](https://docs.github.com/en/rest/actions/self-hosted-runners?apiVersion=2022-11-28) | Both paths confirmed: `GET /orgs/{org}/actions/runners/deprecations/{version}` and `GET /repos/{owner}/{repo}/actions/runners/deprecations/{version}`, path param `version` = "The runner version to look up", 200 = `runner_version` (string, required) plus `registration_deprecates_at` / `runtime_deprecates_at` (string or null, date-time). The listing gives each runner `id`, `runner_group_id`, `name`, `os`, `status`, `busy`, `labels`, `ephemeral`, `version` (string or null) |
+| [changelog 2026-06-12](https://github.blog/changelog/2026-06-12-github-actions-minimum-version-enforcement-timeline-for-self-hosted-runners/) | "The runner must be on version `2.329.0` or later"; installing "each new runner release within 30 days of its publication"; GHEC+DR enforced 2026-07-31 (brownouts from 2026-06-29), GHEC 2026-09-25 (brownouts from 2026-08-24); below-registration runners "won't be able to register or reregister", below-runtime ones "will stop running workflow jobs"; **"GitHub Enterprise Server isn't impacted at this time"**; required actions include updating "installation scripts, VM images, container images, and deployment automation" |
+| [docs, self-hosted runners reference](https://docs.github.com/en/actions/reference/runners/self-hosted-runners) | "If you do not perform a software update within 30 days, the GitHub Actions service will not queue jobs to your runner." Plus the critical-security-update sentence, auto-update as the default, and `--disableupdate` at `config.sh` time |
+| `api.github.com/repos/actions/runner/releases` | HTTP 200. v2.337.0 2026-08-26T14:33:29Z, v2.336.0 2026-07-20, v2.335.1 2026-06-09, v2.335.0 2026-06-08, v2.334.0 2026-04-21 — exactly the cadence the brief quoted |
+| The deprecations endpoint, **called for real** | The route exists: 401 unauthenticated, while a bogus sibling path returns 404. With a `repo`-scoped token on `Booyaka101/runner-drift` it returns 200 with real dates for 2.325.0, 2.328.0, 2.329.0, 2.330.0, 2.334.0, 2.335.0, 2.335.1, 2.336.0 and 2.337.0, and 404 for `9.9.9` with a `documentation_url` naming `#get-runner-version-end-of-life-schedule-for-a-repository` |
+| The listing endpoint, **called for real** | HTTP 200, `{"total_count": 0, "runners": []}` |
+| [`canblmz1/gh-runner-eol`](https://github.com/canblmz1/gh-runner-eol) README | Read before designing the output. Reads the same endpoint at repo/org/enterprise scope, scans Dockerfiles/Helm/Terraform/Packer/Ansible/Chef, statuses OVERDUE/WARNING/OK/UNKNOWN, `--warn-days` default 14, table/json/sarif output. Credited as prior art in the CHANGELOG |
+| Cost | Zero. Public GitHub API. `runners` needs a token the owner already has (`gh auth token`, classic, `repo` scope). No account created, no trial started, no payment details anywhere |
+
+**Two deviations from the brief, both found by calling the API rather than
+reading the docs, both handled rather than guessed:**
+
+1. **`registration_deprecates_at` is absent from every live response**, not null.
+   The schema says string-or-null; the API omits the key entirely for all nine
+   versions checked, returning only `runtime_deprecates_at`. Absent is therefore
+   treated as null, and `REGISTRATION-DUE` cannot fire against today's API. It is
+   implemented and covered by tests against both shapes. Said plainly in the
+   README Limitations and in the CHANGELOG rather than left implied.
+2. **The dates are not publication + 30 days.** The brief's worked example
+   derived 2.335.1 -> 2026-09-25 from v2.337.0's publish date. The API actually
+   returns `2026-09-24T15:30:55Z`, and 2.336.0 (published 2026-07-20) gets
+   2026-11-05, roughly 108 days rather than 30. Whatever GitHub's formula is,
+   `runner-drift` reads the date and never computes one. All output and all
+   fixtures use the real values, so the worked example reads 2026-09-24 (16 days)
+   rather than the brief's illustrative 2026-09-25.
+
+`LESSONS.md` was read in full. Nothing in it contradicted the brief. One new
+entry appended: the absent field, plus the 401/403/404 distinction on these
+endpoints.
+
+### What changed
+
+- **`src/runners.mjs`** (new). The two API calls, an in-run `Map` cache keyed by
+  version string so twenty runners on one version cost one lookup, scope
+  resolution for `--repo` / `--org` / `$GITHUB_REPOSITORY`, `groupByVersion`,
+  `classifyVersion`, `statusFails`, `looksImagePinned`, a best-effort
+  `actions/runner` release-date lookup, and `surveyRunners` tying it together.
+  Zero dependencies, the same `fetchJson` and rate-limit path and the same
+  optional-token handling as the rest of the package.
+- **`src/dates.mjs`** (new). `daysUntil` / `daysFromMs` / `isPast` /
+  `MS_PER_DAY`. A third caller made an existing duplication untenable:
+  `labels.mjs` carried its own copy under the comment "Duplicated from
+  report.mjs, which imports this module". All three now share one implementation
+  and that comment is gone.
+- **`src/report.mjs`**. `runnersReport` / `runnersAnnotations` /
+  `runnersSummaryMarkdown` / `runnerGroupDetail`, built on newly extracted
+  primitives the image lane now also uses: `countdown()`, `dateWithCountdown()`,
+  `annotation()` (four callers) and `markdownTable()` (three callers).
+- **`src/cli.mjs`**. The `runners` command; `--org` / `--repo` /
+  `--fail-on-deprecation`; `checkOwnRunner()` on the no-`ImageVersion` path;
+  shared `wholeDays()` and `summarise()` so `reportDeprecation` is not a clone of
+  `reportRetirement`.
+- **`src/diff.mjs`**. `compareDottedNumbers()`, now the single tuple compare for
+  both image versions and runner versions.
+- **`src/http.mjs`**. A `401` is its own error code with a set-GITHUB_TOKEN hint
+  instead of a bare `Unexpected HTTP 401`; the user-agent version was corrected
+  (it still said 1.0.2 throughout 1.1.0).
+- **`action.yml`**. `fail-on-deprecation` input, `version` default 1.2.0, and the
+  `github-token` description no longer claims "rate limit only".
+- **`.github/workflows/ci.yml`**. New `runners` job. It asserts the two
+  documented outcomes for `github.token` (refused with the permission named, or
+  an empty fleet) and that `--repo` + `--org` is exit 2. `permissions:` has no
+  `administration` scope, so a refusal is the expected path and the job proves
+  the degradation rather than pretending to check a fleet.
+- **Fixtures.** `test/fixtures/runners/deprecations-recorded.json` and
+  `runner-releases-recorded.json` are verbatim live responses recorded
+  2026-09-09. `fleets.json` holds listings built to the documented schema and
+  says so in its own `_note`, because this account owns no self-hosted runners to
+  record; the empty listing in the recorded file is real. New fixtures live in
+  their own `test/fixtures/runners/` directory so existing whole-tree counts stay
+  valid.
+
+### VERIFIED, all run for real on 2026-09-09
+
+- `node --test` -> **201 tests, 201 pass, 0 fail**, fully offline. The 137
+  pre-existing tests are unmodified.
+- **Byte-diff proof.** A harness ran `init`, `guard` and `plan` across 38
+  scenarios (every flag combination, every error path, every `--json` payload,
+  the retirement lane, and the self-hosted skip with and without `$RUNNER_NAME`)
+  against the repo's own manifest fixtures with the network stubbed, on the
+  pre-change tree and again after. Same md5
+  (`4a30343aec6146a4c419f6d4499b2cc4`), zero removed lines, and the only
+  additions are the new `--help` lines. Re-run after every shared-code change,
+  including the `dates.mjs` extraction, the comparator extraction and the
+  `http.mjs` 401 change. Harness kept outside the repo at
+  `D:\tmp\rd-baseline\harness.mjs`.
+- **Clone check.** difflib over 35 new functions against 60 pre-existing:
+  highest 34.8% (`runRunners` vs `checkOwnRunner`), nothing at or above 60%. One
+  extraction was forced by it: `compareRunnerVersions` measured 66.7% against
+  `compareImageVersions`, so the tuple compare moved to `compareDottedNumbers()`.
+- **Live end-to-end**, real token, real API:
+  - `runners --repo Booyaka101/runner-drift` -> the real empty fleet, exit 0.
+  - The worked example over live dates -> `RUNTIME-DUE 2.335.1 x2` at 2026-09-24
+    (16 days) with the ARC hint, `OK 2.337.0 x1 (published 2026-08-26)`, exit 1
+    with `--fail-on-deprecation 30` and exit 0 without it.
+  - `runners --repo actions/runner` -> real HTTP 403 -> `PERMISSION`, the
+    Administration permission named, exit 0.
+  - `runners --org github` -> real 403 -> `PERMISSION`, the org permission named.
+  - No token -> real 401 -> `PERMISSION` with the set-GITHUB_TOKEN hint, exit 0.
+  - `--repo` + `--org` -> exit 2. No scope at all -> exit 2.
+    `--fail-on-deprecation soon` -> exit 2.
+- **Acceptance criteria from the brief**, each checked: `node --test` green;
+  `runners` exits 1 on the due fixture, 0 on the current one and 2 on the usage
+  error; the permission fixture produces the named status and exit 0; `guard` on
+  the self-hosted fixture without a token reproduces the 1.1.0 `::notice` byte
+  for byte (asserted as a string equality, not a regex); the init/guard/plan
+  byte-diff over the existing fixtures is clean.
+- **Packaging.** `npm pack` -> 18 files, 49.1 kB. Installed from that tarball
+  into a clean scratch dir with its own `package.json` and a relative spec
+  (LESSONS 2026-09-01): `runner-drift --version` -> 1.2.0, `--help` shows
+  `runners`, `import('runner-drift')` -> 98 exports including the whole runner
+  lane, and a live `runners` run works from the installed bin.
+- **YAML.** `action.yml` and `ci.yml` both parse with `yaml.safe_load`;
+  `action.yml`'s description is 113 characters (under the 125 Marketplace limit);
+  the new CI assertions were extracted from the YAML and executed for real, all
+  three branches.
+- No TODO / FIXME / placeholder / mock anywhere in `src/`. `npm run lint` clean.
+
+### Known gaps, stated rather than hidden
+
+- **No real self-hosted fleet was ever listed.** This account owns none, and
+  registering one on the owner's machine against a public repo would be a real
+  security hazard (a public repo plus a self-hosted runner is arbitrary code
+  execution from any PR), so it was not done. Consequence: in the populated
+  end-to-end runs the *listing* half came from the schema-shaped fixture while
+  every date, every deprecations response and every release date came from the
+  live API. The empty-fleet path is fully live.
+- **`REGISTRATION-DUE` has never fired against the real API**, because the field
+  is not populated yet. It is exercised by tests only.
+- **Enterprise scope is not implemented.** The 2026-09-03 changelog says the
+  endpoint is callable at enterprise level too. `gh-runner-eol` covers it; this
+  package only ever talks to `/repos/...` and `/orgs/...`.
+
+### Next features, in the order they are worth doing
+
+1. **Enterprise scope** (`--enterprise <slug>`). The endpoint exists and the
+   scope abstraction in `runners.mjs` is already a `{kind, name, path}` object,
+   so this is one more constructor plus a permission-hint row. Held back only
+   because it cannot be verified without an enterprise account.
+2. **`--fail-on-deprecation` on `plan`**, so a migration preview covers both
+   axes in one command.
+3. **Group by runner group, not just version.** `runner_group_id` is already
+   captured. An org with a stale group is a different remediation from a stale
+   image tag.
+4. **A `--max-age <days>` check against the release list.** The publication dates
+   are already fetched; "this version is 94 days old and auto-update is off" is
+   actionable before any GitHub date lands.
+5. **SARIF output**, if anyone asks. `gh-runner-eol` already does it, so it is
+   only worth it to make one report cover both axes for code-scanning.
+
+### The 8-point bar
+
+1. Feature-complete — **met**. Every capability the brief advertises works: both
+   API calls, the version cache, the new command, all six statuses, the
+   permission path, `guard` on self-hosted, and the action input.
+2. No mocks/placeholders/fake data in the product — **met**. No shipped path
+   touches a fixture. Sample data lives only under `test/fixtures/`, and the
+   recorded API responses there are verbatim live.
+3. Real end-to-end run — **met**, with the listing caveat above stated plainly
+   rather than glossed.
+4. Handles reality — **met**. Bad flag values, both scope flags at once, no scope,
+   401, 403, 404 on the listing, 404 on a version, rate limit, network failure,
+   malformed payload, empty fleet, null version, and a fleet past the page cap.
+5. Tests — **met**. `node --test`, 201 passing, offline.
+6. Publish-ready packaging — **met**, verified from a clean install.
+7. README a stranger can follow — **met**. New section 5 with real output, the
+   status table, the permission table, the lint-job snippet, the who-is-at-risk
+   scoping, and both obsolete Limitations sentences rewritten.
+8. Version — **met**. 1.2.0 in `package.json`, `action.yml` and `--version`.
 
 ---
 

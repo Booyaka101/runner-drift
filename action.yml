@@ -16,6 +16,10 @@ inputs:
     description: 'Fail if a pinned runs-on label browns out or retires within this many days. Empty disables the check.'
     required: false
     default: ''
+  fail-on-deprecation:
+    description: 'Fail if this self-hosted runner version loses support within this many days. Needs a token with administration read; empty disables.'
+    required: false
+    default: ''
   tools:
     description: 'Comma-separated tools to watch (e.g. python,cmake,clang). Omit to use the lock file, then workflow detection.'
     required: false
@@ -31,9 +35,9 @@ inputs:
   version:
     description: 'npm version of runner-drift to run.'
     required: false
-    default: '1.1.0'
+    default: '1.2.0'
   github-token:
-    description: 'Token used only to raise the api.github.com rate limit.'
+    description: 'Raises the api.github.com rate limit. For fail-on-deprecation it must also carry administration read, which the default token does not.'
     required: false
     default: ${{ github.token }}
 
@@ -51,6 +55,7 @@ runs:
         GITHUB_TOKEN: ${{ inputs.github-token }}
         RD_FAIL_ON: ${{ inputs.fail-on }}
         RD_FAIL_ON_RETIREMENT: ${{ inputs.fail-on-retirement }}
+        RD_FAIL_ON_DEPRECATION: ${{ inputs.fail-on-deprecation }}
         RD_TOOLS: ${{ inputs.tools }}
         RD_LOCK_FILE: ${{ inputs.lock-file }}
         RD_WORKFLOWS: ${{ inputs.workflows }}
@@ -65,6 +70,7 @@ runs:
         args=(guard --lock-file "$LOCK_ABS" --workflows "$WF_ABS")
         if [ -n "$RD_FAIL_ON" ]; then args+=(--fail-on "$RD_FAIL_ON"); fi
         if [ -n "$RD_FAIL_ON_RETIREMENT" ]; then args+=(--fail-on-retirement "$RD_FAIL_ON_RETIREMENT"); fi
+        if [ -n "$RD_FAIL_ON_DEPRECATION" ]; then args+=(--fail-on-deprecation "$RD_FAIL_ON_DEPRECATION"); fi
         if [ -n "$RD_TOOLS" ]; then args+=(--tools "$RD_TOOLS"); fi
         printf 'lock-file=%s\n' "$RD_LOCK_FILE" >> "$GITHUB_OUTPUT"
         # npx resolves a bin against the CWD's package.json first. In a checkout

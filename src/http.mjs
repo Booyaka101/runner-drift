@@ -43,7 +43,7 @@ function authHeaders() {
   const token =
     process.env.GITHUB_TOKEN || process.env.GH_TOKEN || process.env.INPUT_GITHUB_TOKEN || '';
   const headers = {
-    'user-agent': 'runner-drift/1.0.2 (+https://github.com/Booyaka101/runner-drift)',
+    'user-agent': 'runner-drift/1.2.0 (+https://github.com/Booyaka101/runner-drift)',
     accept: 'application/vnd.github+json',
   };
   if (token) headers.authorization = `Bearer ${token}`;
@@ -98,6 +98,14 @@ export async function fetchText(url, { timeoutMs = 20000, allow404 = false } = {
     throw new DriftError(`GitHub refused the request (HTTP 403): ${url}`, {
       code: 'FORBIDDEN',
       hint: RATE_LIMIT_HINT,
+    });
+  }
+  if (res.status === 401) {
+    throw new DriftError(`GitHub rejected the credentials (HTTP 401): ${url}`, {
+      code: 'UNAUTHORIZED',
+      hint:
+        'This endpoint needs a token. Set GITHUB_TOKEN (inside a workflow: ' +
+        'env: GITHUB_TOKEN: ${{ github.token }}), or unset an expired one.',
     });
   }
   if (!res.ok) {

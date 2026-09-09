@@ -55,3 +55,40 @@ jobs:
         run: node src/cli.mjs guard --tools node,git,docker,cmake
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
+  runners:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # `permissions:` has no `administration` scope, so github.token is expected
+      # to be refused here — the experience almost every user gets first. This
+      # repo also has no self-hosted runners, so an empty fleet is the other
+      # correct answer. Both must exit 0 and neither may crash.
+      - name: runners with the default token degrades as documented, exit 0
+        run: |
+          set -uo pipefail
+          out="$(node src/cli.mjs runners --repo "$GITHUB_REPOSITORY" --fail-on-deprecation 30 2>&1)"
+          code=$?
+          printf '%s\n' "$out"
+          [ "$code" -eq 0 ] || { echo "expected exit 0, got $code"; exit 1; }
+          if grep -q 'title=runner-drift: PERMISSION::' <<<"$out"; then
+            grep -q 'repository permission (read)' <<<"$out" \
+              || { echo 'PERMISSION did not name the permission'; exit 1; }
+            echo 'ok: refused, and it named the permission and the endpoint'
+          elif grep -q 'no self-hosted runners registered' <<<"$out"; then
+            echo 'ok: readable, and the fleet is empty'
+          else
+            echo 'neither documented outcome was printed'; exit 1
+          fi
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: --repo and --org together is a usage error (exit 2)
+        run: |
+          set +e
+          node src/cli.mjs runners --repo a/b --org acme
+          [ "$?" -eq 2 ] || { echo 'expected exit 2'; exit 1; }
