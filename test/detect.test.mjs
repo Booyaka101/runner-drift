@@ -82,6 +82,17 @@ test('actions/setup-* counts as using the tool', () => {
   assert.deepEqual(r.tools, ['Go']);
 });
 
+test('a flow-style step still counts as using the tool', () => {
+  const r = analyseWorkflow(
+    'jobs:\n  a:\n    runs-on: ubuntu-24.04\n    steps: [{uses: actions/setup-go@v5}, {run: go build}]\n',
+  );
+  assert.deepEqual(r.tools, ['Go']);
+  assert.deepEqual(
+    r.uses.map((s) => [s.ref, s.col]),
+    [['actions/setup-go@v5', 20]],
+  );
+});
+
 test('scans a real workflow directory', async () => {
   const d = await detect(path.join(FIXTURES, 'workflows'));
   assert.equal(d.missing, false);

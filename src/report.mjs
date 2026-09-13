@@ -9,9 +9,11 @@
  */
 
 import { appendFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { daysUntil } from './dates.mjs';
 import { deadlineFor, retirementStatus } from './labels.mjs';
+import { REF_STATUS } from './runtimes.mjs';
 import {
   MINIMUM_REGISTRATION_VERSION,
   RUNNER_STATUS,
@@ -316,10 +318,26 @@ export function retirementSummaryMarkdown(findings) {
 
 /** Append markdown to $GITHUB_STEP_SUMMARY when running inside Actions. */
 export async function writeStepSummary(markdown) {
-  const file = process.env.GITHUB_STEP_SUMMARY;
+  return appendToEnvFile('GITHUB_STEP_SUMMARY', `${markdown}\n`);
+}
+
+/**
+ * Set a step output when running inside Actions.
+ *
+ * The heredoc form rather than `name=value`, because a value containing a
+ * newline silently truncates in the plain form and the delimiter is what
+ * GitHub documents for it.
+ */
+export async function writeOutput(name, value) {
+  const delimiter = `rd_${randomUUID()}`;
+  return appendToEnvFile('GITHUB_OUTPUT', `${name}<<${delimiter}\n${value}\n${delimiter}\n`);
+}
+
+async function appendToEnvFile(variable, body) {
+  const file = process.env[variable];
   if (!file) return false;
   try {
-    await appendFile(file, `${markdown}\n`, 'utf8');
+    await appendFile(file, body, 'utf8');
     return true;
   } catch {
     return false;
@@ -618,5 +636,228 @@ export function runnersSummaryMarkdown(survey) {
   lines.push(`> ${survey.autoUpdateNote}`);
   lines.push('>');
   lines.push(`> ${survey.ghesNote} — see [the enforcement timeline](${survey.source}).`);
+  return `${lines.join('\n')}\n`;
+}
+
+/* ------------------------------------------------------- action runtimes */
+
+const REF_BADGE = {
+  [REF_STATUS.FAIL]: '🔴 WILL FAIL',
+  [REF_STATUS.UNKNOWN]: '❔ unknown',
+  [REF_STATUS.OK]: '⚪ ok',
+  [REF_STATUS.CYCLE]: '⚪ ok',
+};
+
+/** `3 workflow files and 1 action file` — what was actually read. */
+function sourceCount(files) {
+  const parts = [];
+  for (const [kind, word] of [['workflow', 'workflow file'], ['action', 'action file']]) {
+    const n = files.filter((f) => f.kind === kind).length;
+    if (n) parts.push(plural(n, word));
+  }
+  return parts.join(' and ') || 'no workflow or action files';
+}
+
+/** The middle column: what `runs.using` said, or what stood in for it. */
+function runtimeCell(node) {
+  if (node.status === REF_STATUS.CYCLE) return 'cycle';
+  if (node.using) return node.using;
+  return node.kind === 'docker' ? 'docker' : '?';
+}
+
+/**
+ * The right-hand column: where to move to, or why there is no answer. A failing
+ * reference always gets one, because an empty cell there reads as nothing to do.
+ */
+function adviceCell(node) {
+  if (node.status === REF_STATUS.UNKNOWN || node.status === REF_STATUS.CYCLE) {
+    return node.reason ?? '';
+  }
+  if (node.status !== REF_STATUS.FAIL) return '';
+  // A composite is only failing because of a step under it, and that step has
+  // the fix on its own row.
+  if (node.children?.length) return '';
+  if (node.kind !== 'remote') return 'local action — set runs.using: node24 and rebuild it';
+  const up = node.upgrade;
+  if (!up) return '';
+  if (up.available) return `-> ${up.ref} (${up.using})`;
+  return up.checked ? up.reason : `upgrade target unknown — ${up.reason}`;
+}
+
+/**
+ * One row per reference, plus the chain beneath it that explains the verdict.
+ *
+ * A composite only ever fails because of a step inside it, so naming the
+ * composite alone leaves the reader with nothing to fix. Children that agree
+ * with the parent's verdict are listed under it, recursively; an ok subtree
+ * stays collapsed, because every row in it would say the same thing.
+ */
+export function referenceRows(node, depth = 0) {
+  const rows = [{ node, depth }];
+  if (node.status === REF_STATUS.OK) return rows;
+  for (const child of node.children ?? []) {
+    if (child.status !== REF_STATUS.OK) rows.push(...referenceRows(child, depth + 1));
+  }
+  return rows;
+}
+
+/** `2 of 3 action references stop working in 10 days.` */
+function removalSentence(subject, days) {
+  if (days === null) return `${subject} stop working on the removal date.`;
+  if (days > 0) return `${subject} stop working in ${plural(days, 'day')}.`;
+  if (days === 0) return `${subject} stop working today.`;
+  return `${subject} stopped working ${plural(Math.abs(days), 'day')} ago.`;
+}
+
+function countdownSuffix(days) {
+  return days === null ? '' : ` ${countdown(days)}`;
+}
+
+/** Plain-text `actions` report. Mirrors planReport()/runnersReport() for the third lane. */
+export function actionsReport(survey) {
+  const out = [];
+  out.push(
+    `scanned ${sourceCount(survey.files)}, ${survey.totalReferences} action reference(s), ${survey.uniqueReferences} unique`,
+  );
+  const removed = survey.daysLeft !== null && survey.daysLeft < 0;
+  out.push(
+    `Node 20 ${removed ? 'was' : 'is'} removed from GitHub-hosted runners on ${survey.removalDate}${countdownSuffix(survey.daysLeft)}`,
+  );
+  for (const err of survey.readErrors) out.push(`warning: ${err}`);
+
+  if (!survey.uniqueReferences) {
+    out.push('');
+    out.push(
+      survey.missing
+        ? `no ${survey.workflowPath} and no ${survey.actionsPath} — nothing to check`
+        : 'no `uses:` references found — every step runs a script, so nothing here depends on a Node runtime',
+    );
+    return out.join('\n');
+  }
+
+  const bucket = (status) =>
+    survey.references.filter((r) =>
+      status === REF_STATUS.OK
+        ? r.status === REF_STATUS.OK || r.status === REF_STATUS.CYCLE
+        : r.status === status,
+    );
+  const sections = [
+    [REF_STATUS.FAIL, 'WILL FAIL'],
+    [REF_STATUS.UNKNOWN, 'unknown'],
+    [REF_STATUS.OK, 'ok'],
+  ].map(([status, heading]) => [bucket(status).flatMap((r) => referenceRows(r)), heading]);
+
+  // Widths come from every section at once, so the columns line up down the
+  // whole report rather than per block.
+  const all = sections.flatMap(([rows]) => rows);
+  const refWidth = Math.max(...all.map(({ node, depth }) => node.ref.length + depth * 2)) + 3;
+  const runtimeWidth = Math.max(...all.map(({ node }) => runtimeCell(node).length)) + 3;
+
+  for (const [rows, heading] of sections) {
+    if (!rows.length) continue;
+    out.push('');
+    out.push(heading);
+    for (const { node, depth } of rows) {
+      const ref = `${'  '.repeat(depth + 1)}${node.ref}`.padEnd(refWidth + 2);
+      const advice = adviceCell(node);
+      out.push(`${ref}${runtimeCell(node).padEnd(advice ? runtimeWidth : 0)}${advice}`.trimEnd());
+    }
+  }
+
+  out.push('');
+  if (survey.counts.fail) {
+    out.push(
+      removalSentence(
+        `${survey.counts.fail} of ${survey.uniqueReferences} action references`,
+        survey.daysLeft,
+      ),
+    );
+  } else if (survey.counts.unknown) {
+    out.push(
+      `Nothing resolved to a runtime the removal takes, but ${plural(survey.counts.unknown, 'reference')} could not be resolved — read those as unchecked, not as safe.`,
+    );
+  } else {
+    out.push(
+      `All ${plural(survey.uniqueReferences, 'action reference')} survive the ${survey.removalDate} removal.`,
+    );
+  }
+  return out.join('\n');
+}
+
+/**
+ * The path from a reference down to the node that explains its verdict, e.g.
+ * `[acme/outer@v1, acme/inner@v2, acme/leaf@v3]`. A composite fails because of
+ * a step inside it, so the end of the path is what to fix and the path itself
+ * is how the reader gets there from the line they wrote.
+ */
+function verdictPath(node) {
+  const worse = (node.children ?? []).filter((c) => c.status !== REF_STATUS.OK);
+  if (!worse.length) return [node];
+  const next = worse.find((c) => c.status === node.status) ?? worse[0];
+  return [node, ...verdictPath(next)];
+}
+
+/**
+ * `::error` on every line that writes a failing reference, `::warning` on one
+ * that could not be resolved. Both name the whole chain, because the line says
+ * `acme/outer@v1` and the reason may be three composites below it.
+ */
+export function actionsAnnotations(survey) {
+  const lines = [];
+  for (const ref of survey.references) {
+    const failing = ref.status === REF_STATUS.FAIL;
+    if (!failing && ref.status !== REF_STATUS.UNKNOWN) continue;
+    const path = verdictPath(ref);
+    const leaf = path[path.length - 1];
+    const via = path.length === 1 ? '' : ` (via ${path.map((n) => n.ref).join(' -> ')})`;
+    const advice = adviceCell(leaf);
+    const message = failing
+      ? `${leaf.ref} runs on ${runtimeCell(leaf)}${via}, which GitHub removes from the hosted runners on ${survey.removalDate}${countdownSuffix(survey.daysLeft)}. ${advice ? `${advice}. ` : ''}See ${survey.source}`
+      : `${ref.ref} could not be resolved${via}: ${leaf.reason ?? 'no reason recorded'}. Read it as unchecked, not as safe.`;
+    const title = failing
+      ? `runner-drift: ${leaf.ref} is ${runtimeCell(leaf)}`
+      : `runner-drift: ${ref.ref} unresolved`;
+    for (const site of ref.where) {
+      lines.push(annotation(failing ? 'error' : 'warning', title, message, site));
+    }
+  }
+  return lines;
+}
+
+/** Step-summary table for an `actions` run. */
+export function actionsSummaryMarkdown(survey) {
+  const lines = ['## runner-drift — action runtimes', ''];
+  lines.push(
+    `Node 20 leaves the GitHub-hosted runners on **${survey.removalDate}**${countdownSuffix(survey.daysLeft)}. ` +
+      `Scanned ${sourceCount(survey.files)}, ${survey.totalReferences} action reference(s), ${survey.uniqueReferences} unique.`,
+  );
+  for (const err of survey.readErrors) lines.push('', `> ⚠️ ${err}`);
+  if (!survey.uniqueReferences) {
+    lines.push('');
+    lines.push('No `uses:` references found — nothing here depends on a Node runtime.');
+    return `${lines.join('\n')}\n`;
+  }
+  lines.push('');
+  const rows = survey.references.flatMap((ref) =>
+    referenceRows(ref).map(({ node, depth }) => [
+      `${'↳ '.repeat(depth)}\`${node.ref}\``,
+      depth ? '' : REF_BADGE[ref.status] ?? ref.status,
+      `\`${runtimeCell(node)}\``,
+      adviceCell(node).replace(/^-> /, '→ '),
+      depth ? '' : ref.where.map((w) => `\`${annotationPath(w.file)}:${w.line}\``).join(', '),
+    ]),
+  );
+  lines.push(...markdownTable(['Reference', 'Status', 'Runtime', 'Fix', 'Used at'], rows));
+  lines.push('');
+  lines.push(
+    survey.counts.fail
+      ? removalSentence(
+          `**${survey.counts.fail} of ${survey.uniqueReferences}** action references`,
+          survey.daysLeft,
+        )
+      : `All ${plural(survey.uniqueReferences, 'action reference')} survive the removal.`,
+  );
+  lines.push('');
+  lines.push(`> Source: [GitHub changelog](${survey.source}).`);
   return `${lines.join('\n')}\n`;
 }
