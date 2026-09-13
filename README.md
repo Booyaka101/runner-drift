@@ -48,9 +48,20 @@ rolling: you have 30 days from each `actions/runner` release to install it, or
 runners that are about to go quiet. See
 [Self-hosted agent versions](#5-runner-drift-runners--self-hosted-agent-versions).
 
+Since 1.3.0 it watches a third clock, and this one is nearly out. GitHub
+[removes Node 20 from the hosted runner images on 2026-09-23](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/),
+and any action declaring `runs.using: node20` stops working that day. Your
+workflow does not say which runtime it is asking for: `uses: actions/checkout@v4`
+looks like a pin, and it is `node20`. So is `actions/upload-artifact@v4`.
+`runner-drift actions` resolves every `uses:` to the runtime the action really
+declares, follows composites and reusable workflows into whatever they call, and
+names the step that breaks rather than the line you wrote. See
+[which `uses:` survive](#6-runner-drift-actions--which-uses-survive-the-node-20-removal).
+
 - No account, no hosted service, no paid tier. Two endpoints only:
   `raw.githubusercontent.com` and `api.github.com`.
-- The image lane runs unauthenticated; `GITHUB_TOKEN` only raises the rate limit.
+- The image and action lanes run unauthenticated; `GITHUB_TOKEN` only raises the
+  rate limit (and reaches actions in private repos).
   The `runners` lane is the exception: GitHub never serves the self-hosted runner
   endpoints anonymously, so it needs a token with administration read.
 - Zero runtime dependencies. Node 22+, ESM.
@@ -342,6 +353,94 @@ listing and reports that runner's own dates in the summary table and `--json`.
 Without a token, or without the permission, it prints the same `::notice` it
 printed in 1.1.0 and exits 0. That is the common case, not an error path.
 
+### 6. `runner-drift actions` — which `uses:` survive the Node 20 removal
+
+GitHub switched the hosted runners' default action runtime to Node 24 on
+2026-06-16 and [removes Node 20 from the images on 2026-09-23](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/).
+An action that declares `runs.using: node20` stops working that day. The catch is
+that the runtime is not written in your workflow. `uses: actions/checkout@v4`
+says nothing about Node, and `actions/checkout@v4` is `node20`, as is
+`actions/upload-artifact@v4` (both read from the ref's own `action.yml` on
+2026-09-13).
+
+`runner-drift actions` resolves every `uses:` in the repository to the
+`runs.using` of the action it really names.
+
+```
+$ npx runner-drift actions
+scanned 1 workflow file, 3 action reference(s), 3 unique
+Node 20 is removed from GitHub-hosted runners on 2026-09-23 (10 days)
+
+WILL FAIL
+  actions/checkout@v4          node20   -> actions/checkout@v7 (node24)
+  actions/upload-artifact@v4   node20   -> actions/upload-artifact@v7 (node24)
+
+ok
+  actions/setup-node@v5        node24
+
+2 of 3 action references stop working in 10 days.
+```
+
+That listing is the report. Like the other lanes, a real run prints its
+`::error` annotations above it, one per failing `uses:` site, so a failure lands
+on the line you wrote rather than in a wall of log.
+
+What it reads:
+
+- `.github/workflows/**/*.yml|yaml`, plus the `action.yml` of every composite
+  under `.github/actions/**` and the one at the repository root, if there is one.
+  A step you own is yours to fix, and nobody reading only the workflows would
+  ever see it. The root file matters most: its steps run in everybody else's
+  job.
+- `owner/repo[/subdir]@ref` resolves to that exact ref's `action.yml` on
+  `raw.githubusercontent.com`, falling back to `action.yaml`.
+- `runs.using: composite` is followed into the composite's own `uses:` lines,
+  five levels deep, and so is a reusable workflow
+  (`owner/repo/.github/workflows/x.yml@ref`). A cycle stops at the repeat.
+- `./path` is read from the checkout. `docker://image` is reported as `docker`
+  and never fetched.
+
+Because the whole chain is walked, the report names the step that actually
+breaks and not just the line you wrote:
+
+```
+WILL FAIL
+  acme/outer@v1                composite
+    acme/inner@v2              composite
+      acme/leaf@v3             node20   no published release declares node24
+```
+
+For each action on a dead runtime it makes one extra `api.github.com` call for
+that repository's latest release, resolves the release's major tag, and reads
+what the tag really declares. So the suggestion is `-> actions/checkout@v7
+(node24)` rather than a guess that a newer major must be newer inside. Where no
+release declares `node24`, it says so instead of inventing a target.
+
+A 404, a private repository or a rate limit is reported as `unknown` with the
+reason. It is never a crash, and never a silent pass:
+
+```
+unknown
+  acme/private@v1   ?   no action.yml or action.yaml at acme/private@v1 — wrong ref, or a private repository (set GITHUB_TOKEN)
+```
+
+An `unknown` does not fail the run on its own, because a proxy or a rate limit
+produces the same row as a genuine gap. `--fail-on-unknown` says the opposite:
+in a repository where every reference is supposed to resolve, unchecked is not
+good enough.
+
+Exit 1 if anything will fail, 0 otherwise. `--warn-only` always exits 0, and
+`--json` prints the structured result and nothing else. In a workflow:
+
+```yaml
+- uses: Booyaka101/runner-drift@v1
+  with:
+    mode: actions
+```
+
+which annotates every failing `uses:` line where it is written, writes a job
+summary table, and sets a `will-fail-count` output.
+
 ## Configuration
 
 ### CLI
@@ -358,32 +457,45 @@ printed in 1.1.0 and exits 0. That is the common case, not an error path.
 | `--org <name>` | `runners` | — | Organization to survey. Mutually exclusive with `--repo` |
 | `--repo <owner/repo>` | `runners` | `$GITHUB_REPOSITORY` | Repository to survey |
 | `--fail-on-deprecation <days>` | `runners`, `guard` | report only, window 30 | Set the window **and** fail when a runner version's support ends inside it |
+| `--warn-only` | `actions` | off | Report every failing `uses:` and still exit 0 |
+| `--fail-on-unknown` | `actions` | off | Also fail when a `uses:` cannot be resolved to a runtime |
 | `--json` | all | off | Machine-readable output |
-| `--no-summary` | `guard`, `runners` | on | Skip the `$GITHUB_STEP_SUMMARY` write |
+| `--no-summary` | `guard`, `runners`, `actions` | on | Skip the `$GITHUB_STEP_SUMMARY` write |
 | `--no-update-lock` | `guard` | on | Report drift but leave the lock file untouched |
 
 Exit codes: `0` success (including "drift found" without `--fail-on`, a refused
 permission, and an empty fleet), `1` drift at or above the `--fail-on` threshold,
 a label inside the `--fail-on-retirement` window, a runner version inside the
-`--fail-on-deprecation` window, or an `EXPIRED` runner version at any threshold,
-`2` usage / configuration error.
+`--fail-on-deprecation` window, an `EXPIRED` runner version at any threshold, or
+an action reference that stops working when Node 20 is removed (`actions`, unless
+`--warn-only`), an unresolved reference under `--fail-on-unknown`, `2` usage /
+configuration error.
 
 ### Action inputs
 
 | Input | Default | Meaning |
 | --- | --- | --- |
+| `mode` | `guard` | Which command the action runs: `guard`, `actions` or `runners` |
 | `fail-on` | `''` | `major`, `minor`, `any`; empty means report only |
 | `fail-on-retirement` | `''` | Days ahead to fail on a label retirement or brownout; empty disables |
 | `fail-on-deprecation` | `''` | Days ahead to fail on this self-hosted runner's own agent version; empty disables. Needs `github-token` to carry administration read |
+| `warn-only` | `false` | `mode: actions` only. Annotate and summarise every failing reference, but never fail the job |
+| `fail-on-unknown` | `false` | `mode: actions` only. Treat a reference that could not be resolved as a failure |
 | `tools` | `''` | Comma-separated override |
 | `lock-file` | `runner-lock.json` | Lock file path |
 | `workflows` | `.github/workflows` | Scanned when there is no lock yet |
-| `version` | `1.2.1` | npm version of `runner-drift` to run |
+| `version` | `1.3.0` | npm version of `runner-drift` to run |
 | `package` | `''` | Override the npm spec, e.g. a `.tgz` built in the same job. Only useful for testing the action before the version it requests is published |
 | `github-token` | `${{ github.token }}` | Rate limit, plus the runner listing for `fail-on-deprecation` (which the default token cannot read) |
 
-The action wraps `guard`. The fleet-wide `runners` command is a plain
-`run:` step, shown [above](#as-a-lint-job).
+Outputs: `lock-file` is the lock path that was read or written (`mode: guard`),
+`will-fail-count` is how many action references stop working when Node 20 is
+removed (`mode: actions`).
+
+`mode` defaults to `guard`, so an existing `with:` block keeps doing exactly what
+it did before 1.3.0. `mode: runners` surveys the repository the job is running in;
+for a fleet-wide survey across an org, `runners` is a plain `run:` step, shown
+[above](#as-a-lint-job).
 
 ### `runners --json`
 
@@ -447,6 +559,92 @@ when `total_count` disagrees with the objects returned, and the text report says
 either way. `runtime.at` keeps the full timestamp; the text report trims it to the
 date.
 
+### `actions --json`
+
+The whole survey, in the order the text report prints it: failing first, then
+unknown, then ok. Trimmed here to one failing and one ok reference (the third,
+`actions/upload-artifact@v4`, is the same shape as the first).
+
+```json
+{
+  "removalDate": "2026-09-23",
+  "defaultSwitchedAt": "2026-06-16",
+  "source": "https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/",
+  "checkedAt": "2026-09-13T00:00:00.000Z",
+  "daysLeft": 10,
+  "root": ".",
+  "workflowPath": ".github/workflows",
+  "actionsPath": ".github/actions",
+  "files": [
+    {
+      "file": ".github/workflows/ci.yml",
+      "kind": "workflow"
+    }
+  ],
+  "missing": false,
+  "workflowsMissing": false,
+  "readErrors": [],
+  "totalReferences": 3,
+  "uniqueReferences": 3,
+  "counts": {
+    "fail": 2,
+    "unknown": 0,
+    "ok": 1
+  },
+  "references": [
+    {
+      "ref": "actions/checkout@v4",
+      "kind": "remote",
+      "using": "node20",
+      "source": "https://raw.githubusercontent.com/actions/checkout/v4/action.yml",
+      "children": [],
+      "status": "fail",
+      "where": [
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 8,
+          "col": 15
+        }
+      ],
+      "upgrade": {
+        "available": true,
+        "checked": true,
+        "ref": "actions/checkout@v7",
+        "tag": "v7",
+        "latestRelease": "v7.0.1",
+        "using": "node24",
+        "url": "https://raw.githubusercontent.com/actions/checkout/v7/action.yml"
+      }
+    },
+    {
+      "ref": "actions/setup-node@v5",
+      "kind": "remote",
+      "using": "node24",
+      "source": "https://raw.githubusercontent.com/actions/setup-node/v5/action.yml",
+      "children": [],
+      "status": "ok",
+      "where": [
+        {
+          "file": ".github/workflows/ci.yml",
+          "line": 9,
+          "col": 15
+        }
+      ]
+    }
+  ],
+  "failing": true
+}
+```
+
+`using` is what the action's own `action.yml` declares, `source` is the exact
+file that was read, and `where` is every line the reference is written on, so a
+reference used by six jobs is resolved once and still reports all six. A
+composite carries its steps in `children`, recursively, and its `status` is the
+worst status underneath it. `upgrade` is present only on a reference that will
+fail: `available: false` with a `reason` means the lookup ran and there is no
+release declaring `node24`, while `checked: false` means the lookup itself could
+not be made.
+
 ### `runner-lock.json`
 
 ```json
@@ -509,6 +707,29 @@ diffs fine, it just has no countdown.
   dependencies). It handles inline, flow-sequence and block-sequence `runs-on:`, and
   resolves `runs-on: ${{ matrix.os }}` by harvesting label-shaped values from the same
   file. If it misses something, `--tools` and `--label` override it completely.
+- **Resolving `uses:` needs the network, and says so when it cannot.** Each unique
+  remote reference is one `raw.githubusercontent.com` read of that exact ref's
+  `action.yml`, plus, for the failing ones only, one `api.github.com` release
+  lookup. A 404, a private repository, an offline box or a rate limit is reported
+  as `unknown` with the reason on the row. It is never guessed and never silently
+  counted as fine. Unauthenticated `api.github.com` allows 60 calls an hour, so a
+  repository with many distinct failing actions wants `GITHUB_TOKEN` set.
+- **A `${{ }}` reference is undecidable and is reported that way.** `uses:
+  ${{ matrix.action }}` only has a value at run time, so there is no `action.yml`
+  to read. Same for a private action you have no token for: 404 is indistinguishable
+  from a typo in the ref, and the row says both possibilities.
+- **What your own `action.yml` declares is not checked, only what it calls.**
+  The root action's steps are read, so a composite of yours that calls
+  `actions/checkout@v4` is caught. Its own `runs.using:` is not classified,
+  because the question this command answers is which references stop working,
+  and your action is not a reference here. A job with `uses: ./` makes it one,
+  which is what this repository does.
+- **Composites nest five levels deep, then stop.** A chain deeper than that, or a
+  cycle, is `unknown` with the reason rather than a hang, and an unresolved chain
+  counts against its parent instead of passing. Composites also get no
+  `-> owner/repo@vN` of their own: `using: composite` says nothing about what its
+  steps resolve to, so the upgrade sits on the child row that actually declares a
+  runtime.
 - **Self-hosted runners have their own lane, not a skip.** There is still no
   `ImageVersion` to diff, so `guard` prints its `::notice` about the image, then
   checks the runner's own **agent** version against GitHub's dates. That needs a
@@ -547,7 +768,7 @@ diffs fine, it just has no countdown.
 ```bash
 git clone https://github.com/Booyaka101/runner-drift
 cd runner-drift
-node --test          # 221 tests, fully offline against recorded real fixtures
+node --test          # 270 tests, fully offline against recorded real fixtures
 ```
 
 Tests run against four **real** manifest snapshots in `test/fixtures/`
@@ -562,6 +783,14 @@ record; the empty listing in the recorded file is real.
 The runner tests stub `globalThis.fetch` rather than the module boundary, so
 `src/runners.mjs` is exercised *through* `src/http.mjs` and the 401, 403, 404 and
 rate-limit paths are the real ones.
+
+The action-runtime tests work off a fixture repository in
+`test/fixtures/actions-repo/` and a routing table of `action.yml` bodies, which
+covers what the live network cannot reproduce on demand: a nested composite whose
+grandchild is `node20`, a cycle, a private repo that 404s, a reusable workflow, a
+subdirectory action spelled `action.yaml`, and a SHA pin with a trailing version
+comment. The runtimes the README claims for the real actions were read from the
+live `action.yml` of each ref on 2026-09-13.
 
 ## License
 

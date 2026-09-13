@@ -35,8 +35,13 @@ import {
   runnersReport,
   runnersAnnotations,
   runnersSummaryMarkdown,
+  actionsReport,
+  actionsAnnotations,
+  actionsSummaryMarkdown,
   writeStepSummary,
+  writeOutput,
 } from './report.mjs';
+import { REF_STATUS, surveyActions } from './runtimes.mjs';
 import {
   DEFAULT_DEPRECATION_WINDOW_DAYS,
   SURVEY_STATUS,
@@ -56,7 +61,7 @@ async function version() {
     const pkg = JSON.parse(await readFile(path.join(HERE, '..', 'package.json'), 'utf8'));
     return pkg.version;
   } catch {
-    return '1.2.1';
+    return '1.3.0';
   }
 }
 
@@ -69,6 +74,8 @@ Usage:
   runner-drift runners [--org <name> | --repo <owner/repo>]
                                                Self-hosted runner agent versions vs
                                                GitHub's end-of-support dates
+  runner-drift actions [path]                  Which uses: references stop working
+                                               when Node 20 leaves the runners
 
 Options:
   --workflows <path>    workflow dir or file          (default: .github/workflows)
@@ -83,8 +90,10 @@ Options:
   --repo <owner/repo>   repository to survey               (runners, default: $GITHUB_REPOSITORY)
   --fail-on-deprecation <days>  fail if a runner version's support ends within N days
                                 (runners, guard; default window ${DEFAULT_DEPRECATION_WINDOW_DAYS})
+  --warn-only           report but always exit 0             (actions)
+  --fail-on-unknown     fail when a uses: cannot be resolved (actions)
   --json                machine-readable output
-  --no-summary          do not write $GITHUB_STEP_SUMMARY (guard)
+  --no-summary          do not write $GITHUB_STEP_SUMMARY (guard, runners, actions)
   --no-update-lock      do not rewrite the lock file  (guard)
   -h, --help            this text
   -v, --version         print version
@@ -95,7 +104,7 @@ Known tools:  ${knownTools().join(', ')}
 Docs: https://github.com/Booyaka101/runner-drift
 `;
 
-const OPTIONS = {
+export const OPTIONS = {
   workflows: { type: 'string' },
   'lock-file': { type: 'string' },
   tools: { type: 'string' },
@@ -107,6 +116,8 @@ const OPTIONS = {
   'fail-on-deprecation': { type: 'string' },
   org: { type: 'string' },
   repo: { type: 'string' },
+  'warn-only': { type: 'boolean', default: false },
+  'fail-on-unknown': { type: 'boolean', default: false },
   json: { type: 'boolean', default: false },
   summary: { type: 'boolean', default: true },
   'update-lock': { type: 'boolean', default: true },
@@ -800,6 +811,56 @@ export async function runRunners(opts, io = process, env = process.env, deps = {
   return EXIT_DRIFT;
 }
 
+/* ----------------------------------------------------------------- actions */
+
+/**
+ * `runner-drift actions` — the action-runtime lane. Resolves every `uses:` in
+ * the repository to the `runs.using` of the action it names, following
+ * composites into their own steps, so the report names the reference that
+ * actually stops working rather than the one you wrote.
+ */
+export async function runActions(opts, io = process, deps = {}) {
+  const survey = await surveyActions({
+    root: deps.root ?? '.',
+    workflows: opts.workflows ?? null,
+    now: deps.now ?? new Date(),
+    fetchText: deps.fetchText,
+    fetchJson: deps.fetchJson,
+  });
+
+  if (opts.json) {
+    out(io.stdout, JSON.stringify(survey, null, 2));
+  } else {
+    for (const line of actionsAnnotations(survey)) out(io.stdout, line);
+    out(io.stdout, actionsReport(survey));
+  }
+  if (opts.summary) await writeStepSummary(actionsSummaryMarkdown(survey));
+  await writeOutput('will-fail-count', String(survey.counts.fail));
+
+  const reasons = [];
+  if (survey.failing) {
+    const failing = survey.references.filter((r) => r.status === REF_STATUS.FAIL).map((r) => r.ref);
+    reasons.push(
+      `runner-drift: ${failing.length} action reference(s) stop working when Node 20 leaves the runners on ${survey.removalDate}: ${failing.join(', ')}`,
+    );
+  }
+  // Opt-in, because "could not resolve" is a proxy or a private repo as often as
+  // it is a real gap, and a tool that fails the build on a network blip is a
+  // tool people disable.
+  if (opts['fail-on-unknown'] && survey.counts.unknown) {
+    const unresolved = survey.references
+      .filter((r) => r.status === REF_STATUS.UNKNOWN)
+      .map((r) => r.ref);
+    reasons.push(
+      `runner-drift: ${unresolved.length} action reference(s) could not be resolved, and --fail-on-unknown treats unchecked as failing: ${unresolved.join(', ')}`,
+    );
+  }
+  for (const line of reasons) out(io.stderr, line);
+
+  if (!reasons.length) return EXIT_OK;
+  return opts['warn-only'] ? EXIT_OK : EXIT_DRIFT;
+}
+
 /* ---------------------------------------------------------------- dispatch */
 
 export async function main(argv = process.argv.slice(2), io = process) {
@@ -835,6 +896,8 @@ export async function main(argv = process.argv.slice(2), io = process) {
         return await runPlan(opts, io);
       case 'runners':
         return await runRunners(opts, io);
+      case 'actions':
+        return await runActions(opts, io, { root: parsed.positionals[0] });
       case 'help':
         out(io.stdout, USAGE);
         return EXIT_OK;

@@ -4,6 +4,80 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-09-13
+
+### Added
+
+- **`runner-drift actions`** — the action-runtime lane, for the deadline that is
+  ten days out.
+
+  GitHub switched the hosted runners' default action runtime to Node 24 on
+  2026-06-16 and
+  [removes Node 20 from the images on 2026-09-23](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/).
+  An action whose `action.yml` declares `runs.using: node20` stops working that
+  day. Nothing in your workflow says which runtime you are asking for, which is
+  the whole problem: `uses: actions/checkout@v4` looks like a pin and resolves to
+  `node20`, and so does `actions/upload-artifact@v4` (both read from the ref's own
+  `action.yml` on 2026-09-13, along with `actions/setup-node@v5`, which is already
+  `node24`).
+
+  The command walks `.github/workflows/**`, `.github/actions/**` and the
+  `action.yml` at the repository root if there is one, resolves
+  every `uses:` to the `runs.using` of the action it actually names, and prints
+  the failures first with the days remaining. `owner/repo[/subdir]@ref` is read
+  from that exact ref on `raw.githubusercontent.com` (`action.yml`, then
+  `action.yaml`); `./path` comes off the checkout; `docker://` is reported as
+  `docker` and never fetched. `runs.using: composite` is followed into the
+  composite's own steps, five levels deep, and so is a reusable workflow, so the
+  report names the grandchild that breaks rather than the line you wrote:
+
+  ```
+  WILL FAIL
+    acme/outer@v1                composite
+      acme/inner@v2              composite
+        acme/leaf@v3             node20   no published release declares node24
+  ```
+
+  For each reference on a dead runtime it makes one `api.github.com` call for the
+  repository's latest release, then reads what that release's major tag really
+  declares, so the suggestion is `-> actions/checkout@v7 (node24)` and not an
+  assumption that a newer major must be newer inside. Where no release declares
+  `node24`, it says so. A 404, a private repository, a cycle, a `${{ }}`
+  reference or a rate limit is reported as `unknown` with the reason on the row,
+  and an unresolved child counts against its parent rather than passing.
+
+  Exit 1 when anything will fail, 0 otherwise. `--warn-only` always exits 0,
+  `--fail-on-unknown` also fails on a reference that could not be resolved, and
+  `--json` prints the whole survey and nothing else.
+
+- **The action has a `mode` input**, one of `guard` (the default), `actions` or
+  `runners`. It defaults to `guard`, so every existing `with:` block keeps doing
+  exactly what it did before this release. `mode: actions` annotates each failing
+  `uses:` on its own line, writes the job summary table and sets a
+  `will-fail-count` output; `warn-only` and `fail-on-unknown` carry the two flags
+  of the same name.
+
+  The step inside the action is now `id: drift` rather than `id: guard`, which is
+  only visible to someone reading the action's source.
+
+### Changed
+
+- A failed HTTP response now has its body drained before the error is raised. A
+  `Response` whose body is never read holds its socket open, so the process would
+  sit there after reporting the failure instead of exiting. The new lane makes a
+  404 routine, since every action is tried as `action.yml` and then `action.yaml`,
+  which is what turned a latent leak into a hot path.
+
+- `src/detect.mjs` yields the full `uses:` reference with its ref intact, and
+  `setup-*` tool detection now reads from that same pass instead of its own scan.
+  One walk, and a more careful one: it skips the body of a `run:` block, so a
+  `- uses:` written inside a heredoc is no longer read as a reference, and it
+  reads flow style (`steps: [{uses: actions/setup-go@v5}]`), which the old
+  tool-detection regex caught by accident and a line-anchored scan would have
+  dropped.
+
+[1.3.0]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.3.0
+
 ## [1.2.1] — 2026-09-09
 
 ### Fixed

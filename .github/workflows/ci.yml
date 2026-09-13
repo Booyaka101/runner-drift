@@ -49,6 +49,13 @@ jobs:
         with:
           package: ${{ steps.pack.outputs.tarball }}
 
+      - name: 'Action runtimes (composite action, mode: actions)'
+        uses: ./
+        with:
+          mode: actions
+          warn-only: true
+          package: ${{ steps.pack.outputs.tarball }}
+
       # Second: the same action resolving from npm inside its own repo — the case
       # that used to fail with exit 127 because npx resolves a bin against the
       # CWD's package.json first. Only a registry spec reproduces that (it needs
@@ -73,6 +80,35 @@ jobs:
       - name: Runner image drift (published action, self-hosted case)
         if: steps.onnpm.outputs.published == 'true'
         uses: ./
+
+  actions:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # Dogfood, and a real gate: if one of this repo's own `uses:` is on a
+      # runtime that 2026-09-23 takes, this job goes red before the runners do.
+      # `--fail-on-unknown` is the acceptance criterion from the 1.3.0 brief,
+      # enforced by the tool itself: every reference here resolves, so `unknown`
+      # means something changed upstream rather than "this never worked".
+      - name: actions (dogfood, fails the build on a dead or unresolved runtime)
+        run: node src/cli.mjs actions --fail-on-unknown
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: the --json survey parses and agrees
+        run: |
+          set -uo pipefail
+          node src/cli.mjs actions --json > survey.json
+          node -e '
+            const s = require("./survey.json");
+            console.log(`${s.uniqueReferences} unique reference(s)`, JSON.stringify(s.counts));
+          '
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
 
   live:
     runs-on: ubuntu-24.04

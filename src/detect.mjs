@@ -16,20 +16,48 @@ const LABEL_SHAPE = /^(ubuntu|windows|macos)-[a-z0-9.-]+$/i;
 
 export const SELF_HOSTED = 'self-hosted';
 
-function indentOf(line) {
+const USES_KEY = 'uses:';
+
+export function indentOf(line) {
   const m = line.match(/^(\s*)/);
   return m ? m[1].length : 0;
 }
 
 /**
- * Collect the raw text of every `run:` step in a workflow document.
+ * A YAML scalar as written on a line: `'node20'  # comment` -> `node20`.
+ *
+ * YAML only starts a comment where the `#` follows whitespace, so `a@b#c` is a
+ * ref and not a truncated one. Written without a regex because the shape that
+ * fits — `(.*)` before an anchor — is the quadratic one (LESSONS 2026-09-09).
+ */
+export function readScalar(raw) {
+  let value = String(raw ?? '');
+  const comment = value.search(/[ \t]#/);
+  if (comment !== -1) value = value.slice(0, comment);
+  value = value.trim();
+  if (value.startsWith('#')) return '';
+  const quote = value[0];
+  if ((quote === '"' || quote === "'") && value.length > 1 && value.endsWith(quote)) {
+    return value.slice(1, -1).trim();
+  }
+  return value;
+}
+
+/**
+ * Every `run:` step in a document: the script text, and the 0-indexed lines the
+ * steps occupy, block scalar bodies included.
+ *
+ * Two consumers, one walk. `extractRunScripts` wants the scripts;
+ * `extractUses` wants the line set, because a `uses:` written inside a heredoc,
+ * or anywhere else in a shell command, is text and not a reference to anything.
  *
  * Same linear-time shape as scanRunsOn below, for the same reason. CodeQL did
  * not flag this one, but it was the identical `\s*(.*)$` pattern.
  */
-export function extractRunScripts(text) {
+function scanRunSteps(text) {
   const lines = String(text ?? '').split(/\r?\n/);
   const scripts = [];
+  const body = new Set();
   for (let i = 0; i < lines.length; i++) {
     // The dash has to be inside the optional group, not beside it. `[ \t]*-?[ \t]*`
     // is two runs over the same class with nothing mandatory between them, so on
@@ -37,6 +65,7 @@ export function extractRunScripts(text) {
     // the spaces. Requiring the `-` inside the group removes the ambiguity.
     const m = lines[i].match(/^[ \t]*(?:-[ \t]*)?run:[ \t]*([^\r\n]*)/);
     if (!m) continue;
+    body.add(i);
     const baseIndent = indentOf(lines[i]);
     const inline = m[1].trim();
     if (inline && !/^[|>][-+0-9]*$/.test(inline)) {
@@ -52,11 +81,17 @@ export function extractRunScripts(text) {
       }
       if (indentOf(l) <= baseIndent) break;
       block.push(l.trim());
+      body.add(j);
       i = j;
     }
     if (block.length) scripts.push(block.join('\n'));
   }
-  return scripts;
+  return { lines, scripts, body };
+}
+
+/** Collect the raw text of every `run:` step in a workflow document. */
+export function extractRunScripts(text) {
+  return scanRunSteps(text).scripts;
 }
 
 /** Pull invoked command names out of a shell script body. */
@@ -228,14 +263,91 @@ export function extractRunsOnTargets(text, file = null) {
   }));
 }
 
-/** `uses: actions/setup-node@v5` -> Node.js (any version suffix; only the owner/repo matters) */
-export function extractSetupActions(text) {
+/** True when everything left of `end` on the line is space or tab. */
+function blankBefore(line, end) {
+  for (let i = end - 1; i >= 0; i--) {
+    if (line[i] !== ' ' && line[i] !== '	') return false;
+  }
+  return true;
+}
+
+/**
+ * Every `uses:` key on one line, as `{raw, start}`: the value as written and the
+ * index it begins at.
+ *
+ * Normally there is one, at the head of a block-mapping entry. Flow style
+ * (`steps: [{uses: actions/setup-node@v5}]`) puts them mid-line after a `{` or a
+ * `,`, and there the value ends at the collection's punctuation rather than at
+ * the end of the line. Anything else in front of `uses:` is shell or prose.
+ *
+ * indexOf rather than a regex: the value is `(.*)` up to a terminator, which is
+ * the quadratic shape (LESSONS 2026-09-09).
+ */
+function usesOnLine(line) {
+  const found = [];
+  for (let at = line.indexOf(USES_KEY); at !== -1; at = line.indexOf(USES_KEY, at + USES_KEY.length)) {
+    // One character back, not a slice of the prefix: the prefix would be re-read
+    // for every `uses:` on the line, which is quadratic on a long one.
+    let k = at - 1;
+    while (line[k] === ' ' || line[k] === '	') k--;
+    const prev = k < 0 ? '' : line[k];
+    const flow = prev === '{' || prev === ',';
+    if (!flow && prev !== '' && !(prev === '-' && blankBefore(line, k))) continue;
+    const start = at + USES_KEY.length;
+    let raw = line.slice(start);
+    if (flow) {
+      const end = raw.search(/[,}\]]/);
+      if (end !== -1) raw = raw.slice(0, end);
+    }
+    found.push({ raw, start });
+  }
+  return found;
+}
+
+/**
+ * Every `uses:` in a document, ref intact and positioned:
+ * `{ref, file, line, col}`, 1-indexed, `col` on the reference text.
+ *
+ * One pass serves both consumers. The setup-* tool detection below wants only
+ * the `owner/repo` prefix, and the runtime lane in runtimes.mjs wants the whole
+ * `owner/repo/subdir@ref`, so the ref is kept whole here and narrowed by the
+ * caller.
+ *
+ * Lines inside a `run:` block scalar are skipped. A workflow that writes another
+ * workflow from a heredoc has `- uses: actions/checkout@v4` in its shell, and
+ * reading that as a reference fails the job over a line nobody runs.
+ */
+export function extractUses(text, file = null) {
+  const { lines, body } = scanRunSteps(text);
+  const sites = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (body.has(i)) continue;
+    for (const { raw, start } of usesOnLine(lines[i])) {
+      const ref = readScalar(raw);
+      if (ref) sites.push({ ref, file, line: i + 1, col: labelColumn(start, raw) });
+    }
+  }
+  return sites;
+}
+
+/** `actions/setup-node@v5` -> `actions/setup-node`; a subdir action keeps two segments. */
+function actionSlug(ref) {
+  return ref.split('@')[0].split('/').slice(0, 2).join('/').toLowerCase();
+}
+
+/** The setup-* actions among a set of `uses:` sites, as canonical tool names. */
+export function setupTools(usesSites) {
   const tools = new Set();
-  for (const m of String(text ?? '').matchAll(/uses:\s*['"]?([\w.-]+\/[\w.-]+)/g)) {
-    const tool = SETUP_ACTION_ALIASES[m[1].toLowerCase()];
+  for (const { ref } of usesSites) {
+    const tool = SETUP_ACTION_ALIASES[actionSlug(ref)];
     if (tool) tools.add(tool);
   }
   return [...tools];
+}
+
+/** `uses: actions/setup-node@v5` -> Node.js (any version suffix; only the owner/repo matters) */
+export function extractSetupActions(text) {
+  return setupTools(extractUses(text));
 }
 
 /** Analyse one workflow document. */
@@ -243,13 +355,14 @@ export function analyseWorkflow(text, file = null) {
   const labels = extractLabels(text);
   const labelSites = extractLabelSites(text, file);
   const runsOnTargets = extractRunsOnTargets(text, file);
+  const uses = extractUses(text, file);
   const commands = new Set();
   for (const script of extractRunScripts(text)) {
     for (const c of commandsInScript(script)) commands.add(c);
   }
   const tools = new Set([...commands].map((c) => canonicalTool(c)));
-  for (const t of extractSetupActions(text)) tools.add(t);
-  return { file, labels, labelSites, runsOnTargets, commands: [...commands].sort(), tools: [...tools].sort() };
+  for (const t of setupTools(uses)) tools.add(t);
+  return { file, labels, labelSites, runsOnTargets, uses, commands: [...commands].sort(), tools: [...tools].sort() };
 }
 
 async function listWorkflowFiles(dir) {
@@ -291,6 +404,7 @@ export async function detect(workflowsPath) {
         labels: [],
         labelSites: [],
         runsOnTargets: [],
+        uses: [],
         tools: [],
         perFile: [],
         missing: true,
@@ -302,6 +416,7 @@ export async function detect(workflowsPath) {
   const labels = new Set();
   const labelSites = [];
   const runsOnTargets = [];
+  const uses = [];
   const tools = new Set();
   for (const f of files) {
     const text = await readFile(f, 'utf8');
@@ -310,6 +425,7 @@ export async function detect(workflowsPath) {
     for (const l of r.labels) labels.add(l);
     labelSites.push(...r.labelSites);
     runsOnTargets.push(...r.runsOnTargets);
+    uses.push(...r.uses);
     for (const t of r.tools) tools.add(t);
   }
 
@@ -319,6 +435,7 @@ export async function detect(workflowsPath) {
     labels: [...labels].sort(),
     labelSites,
     runsOnTargets,
+    uses,
     tools: [...tools].sort(),
     perFile,
     missing: false,

@@ -9,7 +9,8 @@
 import { daysUntil as daysUntilDate } from './dates.mjs';
 
 export const RUNNER_IMAGES_REPO = 'actions/runner-images';
-export const RAW_BASE = 'https://raw.githubusercontent.com/actions/runner-images';
+export const RAW_HOST = 'https://raw.githubusercontent.com';
+export const RAW_BASE = `${RAW_HOST}/${RUNNER_IMAGES_REPO}`;
 export const API_BASE = 'https://api.github.com';
 
 /** label -> manifest path under the runner-images repo */
