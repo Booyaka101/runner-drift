@@ -177,13 +177,17 @@ export function actionRoutes({ files = {}, releases = {}, fallback = null } = {}
       if (hit === null) return { status: 404, body: 'Not Found' };
       return typeof hit === 'string' ? { status: 200, body: hit } : hit;
     }
-    if (url.startsWith(`${API}/repos/`) && url.endsWith('/releases/latest')) {
-      const slug = url.slice(`${API}/repos/`.length, -'/releases/latest'.length);
+    // Compared as an origin, not as a prefix: api.github.com.example.test
+    // starts with the same characters and is a different host.
+    const { origin, pathname } = new URL(url);
+    const api = origin === API;
+    if (api && pathname.startsWith('/repos/') && pathname.endsWith('/releases/latest')) {
+      const slug = pathname.slice('/repos/'.length, -'/releases/latest'.length);
       const hit = Object.hasOwn(tags, slug) ? tags[slug] : null;
       if (hit === null) return { status: 404, body: { message: 'Not Found' } };
       return hit.status ? hit : { status: 200, body: hit };
     }
-    if (url.startsWith(RAW) || url.startsWith(API)) {
+    if (api || origin === RAW) {
       return fallback ?? { status: 404, body: 'Not Found' };
     }
     return null;
