@@ -37,6 +37,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   ubuntu-latest moves from ubuntu-24.04 to ubuntu-26.04. The rollout starts 2026-10-19 (18 days) and finishes 2026-11-19 (49 days).
   announced 2026-09-17; source actions/runner-images#14748 https://github.com/actions/runner-images/issues/14748
   ubuntu-24.04 -> ubuntu-26.04 (images 20260907.300.1 -> 20260907.131.1)
+  ubuntu-24.04 has no announced deprecation deadline in runner-drift's table.
 
   OS 24.04.5 LTS -> 26.04.1 LTS  MAJOR
   Kernel 6.17.0-1022-azure -> 7.0.0-1012-azure  MAJOR
@@ -142,9 +143,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   pin, and the line is withheld.
 
 - `guard --fail-on-migration` diffed the tools named in the workflow files even
-  when the lock file listed a different set. The retirement lane has always
-  preferred the lock. Both lanes now read `--tools`, then the lock, then the
-  scan.
+  when the lock file listed a different set. The drift lane has always preferred
+  the lock, since that is the list it is about to compare. Both lanes now read
+  `--tools`, then the lock, then the scan.
 
 [1.4.0]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.4.0
 

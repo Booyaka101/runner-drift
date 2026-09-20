@@ -1,7 +1,7 @@
 /** Programmatic entry point. The CLI is `src/cli.mjs`. */
 
 export { main, runInit, runGuard, runPlan, runRunners, runActions, resolveManifestVersions, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from './cli.mjs';
-export { parseManifest, loadManifest, manifestUrl, lookupTool } from './manifest.mjs';
+export { parseManifest, loadManifest, manifestUrl, lookupTool, diffManifestTools } from './manifest.mjs';
 export { IMAGE_FIELDS, attributeImageOS, imageDiffs, surveyMigration } from './migration.mjs';
 export {
   listManifestCommits,

@@ -13,7 +13,7 @@
 
 import { IMAGE_OS_TO_LABEL, migrationFor, migrationStatus } from './labels.mjs';
 import { labelOwnership } from './detect.mjs';
-import { loadManifest, resolveManifestVersions } from './manifest.mjs';
+import { diffManifestTools, loadManifest } from './manifest.mjs';
 import { diffTool } from './diff.mjs';
 import { errorText } from './http.mjs';
 
@@ -145,13 +145,9 @@ export async function surveyMigration({
   survey.images = { from: a.imageVersion, to: b.imageVersion };
   survey.image = imageDiffs(a, b).filter((d) => d.changed);
 
-  const ra = resolveManifestVersions(a, tools);
-  const rb = resolveManifestVersions(b, tools);
-  survey.notOnManifest = tools.filter((t) => ra.missing.includes(t) && rb.missing.includes(t));
-  survey.toolDiffs = tools
-    .filter((t) => !survey.notOnManifest.includes(t))
-    .map((t) => diffTool(t, ra.map[t] ?? null, rb.map[t] ?? null))
-    .filter((d) => d.changed);
+  const compared = diffManifestTools(a, b, tools);
+  survey.notOnManifest = compared.notOnManifest;
+  survey.toolDiffs = compared.diffs.filter((d) => d.changed);
 
   return survey;
 }

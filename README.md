@@ -297,6 +297,8 @@ Explained by the scheduled ubuntu-latest migration ubuntu-24.04 -> ubuntu-26.04 
   CMake 3.31.6 -> 4.4.3  MAJOR  [20260907.131.1] https://github.com/actions/runner-images/commit/90ebb6f508835349239c3823c663eba7af98f23d
 ```
 
+The step summary carries the same line, above the drift table.
+
 Exit codes and the `--fail-on` thresholds are untouched by any of this. An
 anomaly fails whatever the threshold, the same rule `--fail-on-retirement` uses
 for a label already past its date. `--json` gains a `migration` block, and the

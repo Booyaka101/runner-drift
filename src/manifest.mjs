@@ -18,6 +18,7 @@
  * Android SDK tables are skipped outright for the same reason.
  */
 
+import { diffToolMaps } from './diff.mjs';
 import { fetchText, NotFoundError, DriftError } from './http.mjs';
 import { RAW_BASE, pathForLabel } from './labels.mjs';
 import { manifestCandidates } from './tools.mjs';
@@ -344,6 +345,22 @@ export function lookupTool(manifest, candidates) {
     if (hit) return { name: hit, versions: manifest.tools[hit] };
   }
   return null;
+}
+
+/**
+ * Both sides of a label-to-label tool comparison, from two parsed manifests.
+ *
+ * A tool neither manifest lists is not a diff of two absences: it is a tool the
+ * comparison cannot speak for at all, so it comes back separately and `plan` and
+ * the migration lane each say so in their own words.
+ * \returns {{diffs:object[], notOnManifest:string[]}}
+ */
+export function diffManifestTools(from, to, tools) {
+  const a = resolveManifestVersions(from, tools);
+  const b = resolveManifestVersions(to, tools);
+  const notOnManifest = tools.filter((t) => a.missing.includes(t) && b.missing.includes(t));
+  const comparable = tools.filter((t) => !notOnManifest.includes(t));
+  return { diffs: diffToolMaps(comparable, a.map, b.map), notOnManifest };
 }
 
 /**

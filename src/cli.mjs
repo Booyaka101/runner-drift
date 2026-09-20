@@ -22,7 +22,7 @@ import {
   migrationStatus,
   normaliseLabel,
 } from './labels.mjs';
-import { loadManifest, resolveManifestVersions } from './manifest.mjs';
+import { diffManifestTools, loadManifest, resolveManifestVersions } from './manifest.mjs';
 import { imageDiffs, surveyMigration } from './migration.mjs';
 import { attribute, commitWindow, attributeChanges, listManifestCommits, manifestAtSha } from './history.mjs';
 import { detect, labelOwnership, runningJob, SELF_HOSTED } from './detect.mjs';
@@ -243,6 +243,11 @@ function once(fn) {
   return () => (pending ??= fn());
 }
 
+/** One workflow scan per command, shared by every lane that wants it. */
+function scanner(opts) {
+  return once(() => detect(opts.workflows ?? path.join('.github', 'workflows')));
+}
+
 /**
  * The workflow scan the two lint lanes start from, or null when there is no
  * workflow directory — which is a notice on both streams, not an error.
@@ -396,8 +401,8 @@ function reportDeprecation(io, survey) {
  * at-risk runner actually serves. Absent workflows are silent: `runners` is
  * documented as needing no repository checkout.
  */
-async function runsOnTargetsFor(opts) {
-  const scanned = await detect(opts.workflows ?? path.join('.github', 'workflows'));
+async function runsOnTargetsFor(scan) {
+  const scanned = await scan();
   return scanned.missing ? [] : scanned.runsOnTargets;
 }
 
@@ -530,7 +535,7 @@ export async function runInit(opts, io = process) {
  * no token. That is the common case, not an error path, and the caller then
  * behaves exactly as it did before this lane existed.
  */
-async function checkOwnRunner(opts, io, env, deps, window) {
+async function checkOwnRunner(opts, io, env, deps, window, scan) {
   const name = env.RUNNER_NAME;
   const token = env.GITHUB_TOKEN || env.GH_TOKEN || env.INPUT_GITHUB_TOKEN;
   if (!name || !token) return null;
@@ -541,7 +546,7 @@ async function checkOwnRunner(opts, io, env, deps, window) {
     ...window,
     now: deps.now ?? new Date(),
     onlyRunnerName: name,
-    runsOnTargets: await runsOnTargetsFor(opts),
+    runsOnTargets: await runsOnTargetsFor(scan),
     fetch: deps.fetchJson,
   });
   if (survey.status === SURVEY_STATUS.OK && !survey.groups.length) {
@@ -557,7 +562,7 @@ async function checkOwnRunner(opts, io, env, deps, window) {
 
 export async function runGuard(opts, io = process, env = process.env, deps = {}) {
   const lockFile = opts['lock-file'] ?? DEFAULT_LOCK_FILE;
-  const scan = once(() => detect(opts.workflows ?? path.join('.github', 'workflows')));
+  const scan = scanner(opts);
   // The migration lane diffs the tools the lock watches, which is not always
   // what the workflow files mention. It reads the lock leniently: a lock this
   // version cannot parse is an error for the drift lane below, which is the
@@ -628,7 +633,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     // No hosted image to diff, but a self-hosted runner still has an agent
     // version with a date on it. Without a token this is a no-op and the skip
     // above is the whole output, exactly as in 1.1.0.
-    const own = await checkOwnRunner(opts, io, env, deps, window);
+    const own = await checkOwnRunner(opts, io, env, deps, window, scan);
     if (opts.json && (own || migration || retirement)) {
       const payload = {};
       if (own) payload.runners = own;
@@ -812,6 +817,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
 
   const summary = stepSummaryMarkdown({
     label,
+    explains: explained,
     fromImage: lock.imageVersion ?? '(unknown)',
     toImage: imageVersion,
     diffs,
@@ -929,11 +935,7 @@ export async function runPlan(opts, io = process, deps = {}) {
     }
   }
 
-  const ra = resolveManifestVersions(a, tools);
-  const rb = resolveManifestVersions(b, tools);
-  const missingBoth = tools.filter((t) => ra.missing.includes(t) && rb.missing.includes(t));
-  const comparable = tools.filter((t) => !missingBoth.includes(t));
-  const diffs = comparable.map((t) => diffTool(t, ra.map[t] ?? null, rb.map[t] ?? null));
+  const { diffs, notOnManifest: missingBoth } = diffManifestTools(a, b, tools);
 
   if (opts.json) {
     out(
@@ -996,7 +998,7 @@ export async function runRunners(opts, io = process, env = process.env, deps = {
   const survey = await surveyRunners(resolved.scope, {
     ...window,
     now: deps.now ?? new Date(),
-    runsOnTargets: await runsOnTargetsFor(opts),
+    runsOnTargets: await runsOnTargetsFor(scanner(opts)),
     fetch: deps.fetchJson,
   });
 

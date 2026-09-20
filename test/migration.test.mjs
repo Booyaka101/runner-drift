@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import {
   MIGRATIONS,
   MIGRATION_PHASE,
@@ -676,6 +676,24 @@ test('the explanation needs no flag: the two labels alone identify the move', as
   // Without --fail-on-migration the lane itself stays quiet: no window, no diff.
   assert.ok(!r.stdout.includes('rollout'), 'no migration report without the flag');
   assert.equal(r.stderr, '');
+});
+
+test('the step summary names the explanation the way stdout does', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'runner-drift-summary-'));
+  const summaryFile = path.join(dir, 'summary.md');
+  await writeFile(summaryFile, '', 'utf8');
+  const prev = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = summaryFile;
+  try {
+    await guardAcrossTheMove({ summary: true }, DURING);
+    const md = await readFile(summaryFile, 'utf8');
+    assert.match(md, /Explained by the scheduled `ubuntu-latest` migration/);
+    assert.match(md, /\(2026-10-19 to 2026-11-19\)/);
+  } finally {
+    if (prev === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+    else process.env.GITHUB_STEP_SUMMARY = prev;
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 test('--json names the explanation without --fail-on-migration too', async () => {

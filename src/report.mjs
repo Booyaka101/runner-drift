@@ -155,6 +155,7 @@ export function stepSummaryMarkdown({
   approximate = false,
   baseline = false,
   written = true,
+  explains = null,
   lockFile,
 }) {
   const lines = [];
@@ -188,6 +189,14 @@ export function stepSummaryMarkdown({
   if (!changed.length) {
     lines.push(`No tool drift across ${diffs.length} locked tool(s).`);
     return `${lines.join('\n')}\n`;
+  }
+
+  if (explains) {
+    lines.push(
+      `> 📅 Explained by the scheduled \`${explains.label}\` migration \`${explains.from}\` → ` +
+        `\`${explains.to}\` (${explains.starts} to ${explains.ends}). The tools below moved with the image.`,
+    );
+    lines.push('');
   }
 
   const rows = changed.map((d) => {
