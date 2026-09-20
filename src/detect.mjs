@@ -118,9 +118,18 @@ export function commandsInScript(script) {
   return [...found];
 }
 
-/** A YAML inline comment: a `#` at the start of the line or after a space. */
+/**
+ * Drop a YAML inline comment: a `#` at the start of the line or after a space.
+ *
+ * Found by searching rather than matching to the end of the line, for the same
+ * reason `readScalar` does: `[^\r\n]*$` before an anchor is the quadratic shape,
+ * and a line holding a stray CR makes every `#` rescan to it (LESSONS
+ * 2026-09-09).
+ */
 function stripComment(text) {
-  return text.replace(/(^|[ \t])#[^\r\n]*$/, '$1');
+  if (text.startsWith('#')) return '';
+  const at = text.search(/[ \t]#/);
+  return at === -1 ? text : text.slice(0, at + 1);
 }
 
 /** 1-indexed column of the label inside a raw scalar that may be padded or quoted. */

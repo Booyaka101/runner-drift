@@ -358,6 +358,10 @@ test('the line scanners stay linear on pathological input', () => {
     ['commandsInScript after sudo', () => commandsInScript(`sudo${pad}x`)],
     ['a matrix scan over an indent with no colon', () => extractLabelSites(`runs-on: \${{ matrix.os }}\n${pad}x`)],
     ['a matrix scan over a dashed indent', () => extractLabelSites(`runs-on: \${{ matrix.os }}\n${pad}-${pad}x`)],
+    [
+      'comment starts before a stray CR',
+      () => extractLabelSites(`runs-on: \${{ matrix.os }}\n${' #'.repeat(100_000)}${CR}`),
+    ],
   ];
 
   for (const [label, fn] of cases) {
