@@ -82,14 +82,15 @@ export function attributeImageOS({ label, imageOS, sites = [], others = [], here
 
   if (asked) {
     if (endpoint) return { imageOS, note: null };
-    // Two jobs sharing an id, rather than one job with two legs: only a plain
-    // `runs-on:` rules out a matrix, and only an unplaceable run can be in
-    // another file at all.
-    if (rival && named && !placed) {
+    // Two jobs sharing an id, rather than one job with two legs: only an
+    // unplaceable run can be in another file at all, and this job's own
+    // `runs-on:` rules the matrix wording out whenever it is a plain label.
+    if (rival && !placed && (named || direct)) {
+      const how = named ? `asks for ${observed} by name` : `can be scheduled onto ${observed}`;
       return {
         imageOS: null,
-        note: `More than one workflow has a job called "${here.job}", and one of them asks for `
-          + `${observed} by name, so this runner may be that job instead.`,
+        note: `More than one workflow has a job called "${here.job}", and one of them ${how}, `
+          + 'so this runner may be that job instead.',
       };
     }
     return {

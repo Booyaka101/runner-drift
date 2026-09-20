@@ -378,10 +378,13 @@ function labelSitesWhere(walk, file, keep) {
   // The matrix fallback is a whole-file token scan, so it only says which job a
   // label sits in, not which job could be scheduled by it. A job whose own
   // `runs-on:` is a plain label is scheduled by that label and nothing else, and
-  // a label-shaped `env:` value under it is not a runner it asks for.
+  // a label-shaped `env:` value under it is not a runner it asks for. A job with
+  // no `runs-on:` at all is a `uses:` call, and the label it hands the callee in
+  // `with:` is still a runner this file asks for.
   const asks = expression
     ? new Set(targets.filter((t) => t.expression).map((t) => jobOf(t.line)))
     : new Set();
+  const names = new Set(targets.map((t) => jobOf(t.line)));
 
   // A label an expression resolves to need not sit in the jobs map at all: a
   // `workflow_call` input default and a top-level `env:` value both live above
@@ -396,7 +399,7 @@ function labelSitesWhere(walk, file, keep) {
     const key = `${label}@${line}:${col}`;
     if (seen.has(key)) continue;
     const job = jobOf(line);
-    if (viaMatrix && job !== null && !asks.has(job)) continue;
+    if (viaMatrix && job !== null && names.has(job) && !asks.has(job)) continue;
     seen.add(key);
     const site = { label, file, line, col, job };
     if (viaMatrix) site.viaMatrix = true;

@@ -84,7 +84,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
   `--fail-on`, `--fail-on-retirement` and `--fail-on-deprecation` are untouched,
   and so are all four output formats' existing contents: the migration is a new
-  annotation group, a new step-summary table (Label, Phase, Move, Window, This
+  annotation group, a new step-summary table (Label, Status, Move, Window, This
   runner, Source) and a new `migration` key in `--json`.
 
 - **`--as-of <date>`** on every command that counts down to something (`guard`, `plan`, `runners`, `actions`). It moves the clock every countdown is
@@ -205,6 +205,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   explanation, exactly as it does when there is no job id at all, and says so
   rather than reporting the label as migrated.
 
+- A `uses:` job passing a runner label to a reusable workflow lost it whenever
+  the file also had a matrix job. Such a job has no `runs-on:` of its own, so the
+  `with:` value is the only record of the runner the file asks for, and the
+  retirement lane stopped naming it.
+
 - One matrix job let every label-shaped value in the file speak for the job it
   sat in. The fallback is a token scan, so a sibling job pinned to
   `runs-on: ubuntu-latest` with an `env:` naming `ubuntu-26.04` looked like a job
@@ -245,6 +250,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   already migrated, `--fail-on-migration` reddened the build for the whole
   rollout month, and only when run inside a job, which read as flakiness. Such a
   label now belongs to every job whose `runs-on:` is an expression.
+
+- The same sentence was used when this run's own job asks for the floating label
+  outright and the namesake job reaches the observed image through a matrix. It
+  claimed a matrix this job does not have and a pin the other one does not have.
+  A namesake is now described by what it can be scheduled onto when it is not a
+  plain pin.
 
 - A job that reaches the floating label through its own matrix was explained as
   two workflows sharing a job id whenever the run could not be placed in a file,

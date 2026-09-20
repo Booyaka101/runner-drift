@@ -769,6 +769,27 @@ test('a matrix in a sibling job does not overrule this one plain runs-on', async
   assert.equal(r.code, EXIT_OK, 'a runner that has already moved is green');
 });
 
+test('a namesake job that matrixes onto the image is named as one, not as a leg', () => {
+  // This run's own job asks for the floating label outright, so the rival can
+  // only be the other file's job of the same id.
+  const mine = ['jobs:', '  build:', '    runs-on: ubuntu-latest'].join(String.fromCharCode(10));
+  const theirs = [
+    'jobs:',
+    '  build:',
+    '    strategy:',
+    '      matrix:',
+    '        os: [ubuntu-26.04]',
+    '    runs-on: ${{ matrix.os }}',
+  ].join(String.fromCharCode(10));
+  const sites = [...extractFloatingSites(mine, 'ci.yml'), ...extractFloatingSites(theirs, 'release.yml')];
+  const others = [...extractLabelSites(mine, 'ci.yml'), ...extractLabelSites(theirs, 'release.yml')];
+  const here = { job: 'build', file: 'caller.yml' };
+  const a = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu26', sites, others, here });
+  assert.equal(a.imageOS, null);
+  assert.doesNotMatch(a.note, /through a matrix/, 'this job has no matrix');
+  assert.match(a.note, /More than one workflow has a job called "build", and one of them can be scheduled onto ubuntu-26.04/);
+});
+
 test('one matrix job is not reported as two workflows sharing a job id', () => {
   // The same withholding, but the repository has one file and one job in it:
   // the rival is the other leg of this job's own matrix, not a namesake.

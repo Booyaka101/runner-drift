@@ -425,6 +425,30 @@ test('a job with a plain runs-on gets no labels from the matrix fallback', () =>
   );
 });
 
+test('a job with no runs-on still hands a label to the workflow it calls', () => {
+  // A `uses:` job has no runs-on of its own, so the label it passes in `with:`
+  // is the only record of the runner this file asks for.
+  const y = [
+    'jobs:',
+    '  test:',
+    '    strategy:',
+    '      matrix:',
+    '        os: [ubuntu-24.04]',
+    '    runs-on: ${{ matrix.os }}',
+    '  call:',
+    '    uses: ./.github/workflows/build.yml',
+    '    with:',
+    '      runner: ubuntu-22.04',
+  ].join(String.fromCharCode(10));
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => [s.label, s.job]),
+    [
+      ['ubuntu-24.04', 'test'],
+      ['ubuntu-22.04', 'call'],
+    ],
+  );
+});
+
 test('one label line is one site, however many jobs the expression serves', () => {
   // Three jobs sharing an input default used to mean three identical
   // annotations on the same line.
