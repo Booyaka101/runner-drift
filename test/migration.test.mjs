@@ -551,6 +551,30 @@ const inJob = (job) => ({
   GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/latest.yml@refs/heads/main',
 });
 
+test('a job id shared by two workflow files is told apart by the file', async () => {
+  // ci.yml and release.yml both have a job called build. This run is the
+  // Windows one, so its ImageOS says nothing about ubuntu-latest.
+  const r = await guard(
+    {
+      tools: 'node',
+      'fail-on-migration': '0',
+      json: true,
+      workflows: path.join(FIXTURES, 'workflows-two-builds'),
+    },
+    {
+      ImageOS: 'win25',
+      GITHUB_JOB: 'build',
+      GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/release.yml@refs/heads/main',
+    },
+    DURING,
+  );
+  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const s = j.migration.surveys[0];
+  assert.equal(s.observed, null, 'the windows job is not evidence about ubuntu-latest');
+  assert.notEqual(s.state, MIGRATION_STATE.UNEXPECTED);
+  assert.match(s.notes.join(' '), /did not run on ubuntu-latest/);
+});
+
 test('a guard step on an unrelated image says nothing about the floating label', async () => {
   const r = await guard(
     { tools: 'node', 'fail-on-migration': '0', json: true },

@@ -188,6 +188,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `::error`, exit 1, and a summary cell containing a function body. The lookup
   is an own-key check now, in one place both lanes use.
 
+- A job id that two workflow files both use was told apart by the file only when
+  the scan happened to hold a pinned site in the file this run came from. The
+  migration lane handed the ownership rule the pinned sites and one floating
+  label's, so a `build` job on `windows-latest` in `release.yml` could claim the
+  `build` job on `ubuntu-latest` in `ci.yml`, and report an image from outside
+  the window: an `::error` and a failed build, in a repo where nothing was wrong.
+
 - A job running inside a reusable workflow had its image discarded. Actions
   reports the *calling* workflow in `GITHUB_WORKFLOW_REF` while `GITHUB_JOB` is
   the id inside the callee, and the scan matched the file first, so the real

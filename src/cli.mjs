@@ -365,9 +365,16 @@ async function checkMigration(opts, io, now, imageOS, env, scan, lock, deps) {
   const tools = asked?.length ? asked : (locked?.length ? locked : scanned.tools);
   const load = deps.loadManifest ?? loadManifest;
   const here = runningJob(env);
+  // Every other site in the scan, not just the pinned ones: the job this run
+  // came from may be on a different floating label, and the ownership rule
+  // needs the whole scan to tell one job id from the same id in another file.
+  const elsewhere = (label) => [
+    ...scanned.floatingSites.filter((site) => site.label !== label),
+    ...scanned.labelSites,
+  ];
   const surveys = await Promise.all(
     [...byLabel].map(([label, sites]) =>
-      surveyMigration({ label, now, imageOS, tools, sites, others: scanned.labelSites, here, load }),
+      surveyMigration({ label, now, imageOS, tools, sites, others: elsewhere(label), here, load }),
     ),
   );
 

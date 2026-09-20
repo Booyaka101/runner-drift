@@ -405,6 +405,10 @@ export function jobMatcher(here, sites = []) {
 /**
  * Who asked for `label` here, and whether anything else asks for `observed` too.
  *
+ * `sites` are this label's, `others` is every other site the scan found. Both
+ * are needed to place the running job: a job id is unique within a file, not
+ * across a repository, so the file has to decide when two files use the same id.
+ *
  * `scoped` is whether a running job was identified at all; without one every
  * site in the repository is in scope and the caller has to decide how much that
  * is worth. `direct` is a plain `runs-on: <label>`, `asked` includes reaching
