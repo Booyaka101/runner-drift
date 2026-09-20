@@ -205,6 +205,18 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   explanation, exactly as it does when there is no job id at all, and says so
   rather than reporting the label as migrated.
 
+- A run that could not be placed in a file took a plain `runs-on: ubuntu-latest`
+  from any file with a job of the same id. Two `build` jobs, one on
+  `ubuntu-latest` and one on `windows-latest`, and a run reporting a caller the
+  scan does not hold: the Windows runner's image was attributed to
+  `ubuntu-latest` and reported as an image nobody announced, an `::error` that
+  fails at any threshold, annotated on a workflow the run never touched. A job id
+  that names jobs in files which do not all ask for the label now settles
+  nothing, and the run says so.
+
+- With no `GITHUB_JOB`, a matrix leg that can be scheduled onto the observed
+  image was reported as a workflow asking for it by name.
+
 - A `uses:` job passing a runner label to a reusable workflow lost it whenever
   the file also had a matrix job. Such a job has no `runs-on:` of its own, so the
   `with:` value is the only record of the runner the file asks for, and the

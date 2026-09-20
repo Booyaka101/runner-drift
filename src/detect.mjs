@@ -474,7 +474,10 @@ export function jobMatcher(here, sites = []) {
  * through a matrix, and `rival` is another site naming `observed`, which the
  * runner is as likely to be serving as the floating one. `named` says that
  * rival is a plain `runs-on:` rather than a matrix leg, which is the difference
- * between two jobs sharing an id and one job with two legs.
+ * between two jobs sharing an id and one job with two legs. `alone` is whether
+ * every file holding a job of this id asks for `label` in it, which is what an
+ * unplaced `direct` is worth: one of two `build` jobs runs on Windows, and the
+ * run cannot say which one it is.
  *
  * Inside one job the only rival is a matrix leg, since a job has one `runs-on:`.
  * That needs the job to be pinned to a file. A job id alone can name a job in
@@ -487,6 +490,10 @@ export function labelOwnership({ label, observed = null, sites = [], others = []
   const inScope = here ? match : () => true;
   const mine = sites.filter((site) => site.label === label && inScope(site));
   const rivals = others.filter((site) => site.label === observed && inScope(site));
+  const asking = new Set(mine.map((site) => site.file));
+  const alone = [...sites, ...others]
+    .filter((site) => inScope(site))
+    .every((site) => asking.has(site.file));
   return {
     scoped: Boolean(here),
     placed: pinned,
@@ -494,6 +501,7 @@ export function labelOwnership({ label, observed = null, sites = [], others = []
     asked: mine.length > 0,
     rival: observed !== null && (pinned ? rivals.some((site) => site.viaMatrix) : rivals.length > 0),
     named: observed !== null && rivals.some((site) => !site.viaMatrix),
+    alone: pinned || alone,
   };
 }
 

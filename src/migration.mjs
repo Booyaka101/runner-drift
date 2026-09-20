@@ -61,22 +61,32 @@ export function attributeImageOS({ label, imageOS, sites = [], others = [], here
   if (!imageOS) return { imageOS: null, note: null };
   const m = migrationFor(label);
   const observed = labelForImageOS(imageOS);
-  const { direct, asked, rival, placed, named } = labelOwnership({ label, observed, sites, others, here });
+  const { direct, asked, rival, placed, named, alone } = labelOwnership({
+    label, observed, sites, others, here,
+  });
 
   // A plain `runs-on:` in the job this run came from settles it, as long as the
   // job id picked out one job. A job a reusable workflow reports is matched on
-  // the id alone, and an id is unique in a file, not in a repository.
-  if (here && direct && !rival) return { imageOS, note: null };
+  // the id alone, and an id is unique in a file, not in a repository, so a
+  // second file whose job of that id runs somewhere else takes the claim back.
+  if (here && direct && !rival && alone) return { imageOS, note: null };
   const endpoint = !rival && (observed === m?.from || observed === m?.to);
 
   if (!here) {
     if (endpoint) return { imageOS, note: null };
+    if (rival) {
+      return {
+        imageOS: null,
+        note: named
+          ? `These workflows ask for ${observed} by name, so this runner is not evidence about ${label}.`
+          : `A matrix in these workflows can be scheduled onto ${observed}, so this runner is not `
+            + `evidence about ${label}.`,
+      };
+    }
     return {
       imageOS: null,
-      note: rival
-        ? `These workflows ask for ${observed} by name, so this runner is not evidence about ${label}.`
-        : `No GITHUB_JOB says which job this check ran in, and ${observed ?? imageOS} is neither `
-          + `image in the ${label} window, so this runner is not evidence about it.`,
+      note: `No GITHUB_JOB says which job this check ran in, and ${observed ?? imageOS} is neither `
+        + `image in the ${label} window, so this runner is not evidence about it.`,
     };
   }
 
@@ -91,6 +101,13 @@ export function attributeImageOS({ label, imageOS, sites = [], others = [], here
         imageOS: null,
         note: `More than one workflow has a job called "${here.job}", and one of them ${how}, `
           + 'so this runner may be that job instead.',
+      };
+    }
+    if (!alone) {
+      return {
+        imageOS: null,
+        note: `More than one workflow has a job called "${here.job}" and they do not all run on `
+          + `${label}, so this runner may be one of the others.`,
       };
     }
     return {

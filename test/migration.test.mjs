@@ -769,6 +769,51 @@ test('a matrix in a sibling job does not overrule this one plain runs-on', async
   assert.equal(r.code, EXIT_OK, 'a runner that has already moved is green');
 });
 
+test('an unplaceable run does not hand another file\'s Windows image to the label', async () => {
+  // ci.yml's build is on ubuntu-latest and release.yml's is on windows-latest.
+  // The run reports a caller the scan does not hold, so the id alone is left to
+  // match on, and a plain runs-on: in the wrong file used to settle it.
+  const r = await guard(
+    {
+      tools: 'node',
+      'fail-on-migration': '30',
+      json: true,
+      workflows: path.join(FIXTURES, 'workflows-build-elsewhere'),
+    },
+    {
+      ImageOS: 'win25',
+      GITHUB_JOB: 'build',
+      GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/caller.yml@refs/heads/main',
+    },
+    DURING,
+  );
+  const s = jsonOf(r.stdout).migration.surveys[0];
+  assert.equal(s.observed, null, 'a Windows runner says nothing about ubuntu-latest');
+  assert.notEqual(s.state, MIGRATION_STATE.UNEXPECTED, 'not an error raised at the wrong repo');
+  assert.match(s.notes.join(' '), /they do not all run on ubuntu-latest/);
+});
+
+test('with no job at all, a matrix leg is not described as a pin', async () => {
+  const y = await readFile(path.join(FIXTURES, 'workflows-matrix', 'ci.yml'), 'utf8');
+  const a = attributeImageOS({
+    label: 'ubuntu-latest',
+    imageOS: 'ubuntu22',
+    sites: extractFloatingSites(y, 'ci.yml'),
+    others: extractLabelSites(y, 'ci.yml'),
+    here: null,
+  });
+  assert.equal(a.imageOS, null);
+  const b = attributeImageOS({
+    label: 'ubuntu-latest',
+    imageOS: 'ubuntu26',
+    sites: extractFloatingSites(y, 'ci.yml'),
+    others: extractLabelSites(y, 'ci.yml'),
+    here: null,
+  });
+  assert.doesNotMatch(b.note, /ask for ubuntu-26.04 by name/, 'the only site is a matrix leg');
+  assert.match(b.note, /A matrix in these workflows can be scheduled onto ubuntu-26.04/);
+});
+
 test('a namesake job that matrixes onto the image is named as one, not as a leg', () => {
   // This run's own job asks for the floating label outright, so the rival can
   // only be the other file's job of the same id.

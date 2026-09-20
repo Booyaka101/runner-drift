@@ -354,7 +354,7 @@ export function lookupTool(manifest, candidates) {
  * A tool neither manifest lists is not a diff of two absences: it is a tool the
  * comparison cannot speak for at all, so it comes back separately and `plan` and
  * the migration lane each say so in their own words.
- * \returns {{diffs:object[], notOnManifest:string[]}}
+ * @returns {{diffs:object[], notOnManifest:string[]}}
  */
 export function diffManifestTools(from, to, tools) {
   const a = resolveManifestVersions(from, tools);
