@@ -4,6 +4,91 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] — 2026-09-20
+
+### Added
+
+- **The `ubuntu-latest` migration lane.** GitHub's changelog of 2026-09-17: *"The
+  ubuntu-latest label will migrate from Ubuntu 24.04 to Ubuntu 26.04. This
+  migration will roll out gradually between October 19 and November 19, 2026."*
+  ([actions/runner-images#14748](https://github.com/actions/runner-images/issues/14748)).
+
+  For that month `ubuntu-latest` is two different operating systems depending on
+  which runner the job lands on, and no workflow file changes. The kernel goes
+  `6.17.0-1022-azure` -> `7.0.0-1012-azure` and systemd `255.4-1ubuntu8.17` ->
+  `259.5-0ubuntu3.4`, while Docker Buildx, the AWS and Azure CLIs, Rust and Java
+  17 are the same on both images. That is exactly the kind of change this tool
+  exists to show you before it lands.
+
+  `MIGRATIONS` in `src/labels.mjs` records the announced moves: the floating
+  label, the two concrete labels it moves between, the window and the source
+  issue. It sits beside the retirement `DEADLINES` table rather than inside it,
+  and shares no keys with it: a retirement is an end date for one image, a
+  migration is a dated window between two live ones. Today it has one entry.
+  `windows-latest` and `macos-latest` are a data addition when GitHub announces
+  them.
+
+- **`plan --from <floating label>`** no longer refuses. Where `MIGRATIONS` names
+  both ends, `plan` resolves them and diffs the two concrete images, so the
+  output is the kernel and systemd deltas rather than a bare warning:
+
+  ```
+  $ runner-drift plan --from ubuntu-latest
+  ubuntu-latest moves from ubuntu-24.04 to ubuntu-26.04. The rollout starts 2026-10-19 (18 days) and finishes 2026-11-19 (49 days).
+  announced 2026-09-17; source actions/runner-images#14748 https://github.com/actions/runner-images/issues/14748
+  ubuntu-24.04 -> ubuntu-26.04 (images 20260907.300.1 -> 20260907.131.1)
+
+  OS 24.04.5 LTS -> 26.04.1 LTS  MAJOR
+  Kernel 6.17.0-1022-azure -> 7.0.0-1012-azure  MAJOR
+  Systemd 255.4-1ubuntu8.17 -> 259.5-0ubuntu3.4  MAJOR
+  ```
+
+  A floating `--to`, or a floating `--from` with no announced migration, is
+  refused exactly as before. `plan` also gained the three image-header rows (OS,
+  kernel, systemd) for every comparison, not just this one, since they were being
+  parsed already and dropped.
+
+- **`guard --fail-on-migration <days>`**, and the matching `fail-on-migration`
+  action input. Off by default, like `fail-on-retirement`: without it `guard`
+  does not fetch the two manifests at all. With it, each floating `runs-on:` line
+  is annotated according to where today sits in the window and which `ImageOS`
+  the runner exported: pending, this runner has not moved yet, the migration has
+  reached this runner, done, or, past the window on the old image, an anomaly.
+  The anomaly fails whatever the threshold, the same rule a label already past
+  its retirement date follows.
+
+  When the observed image explains the tool drift `guard` just found, the report
+  says so, rather than leaving a page of major bumps looking unexplained. That
+  line needs no input: a lock recorded on one side of an announced move and a
+  runner on the other is a table lookup, not a check to opt into.
+
+  ```
+  Explained by the scheduled ubuntu-latest migration ubuntu-24.04 -> ubuntu-26.04 (2026-10-19 to 2026-11-19); the tool versions below moved with the image.
+  ```
+
+  `--fail-on`, `--fail-on-retirement` and `--fail-on-deprecation` are untouched,
+  and so are all four output formats' existing contents: the migration is a new
+  annotation group, a new step-summary table (Label, Phase, Move, Window, This
+  runner, Source) and a new `migration` key in `--json`.
+
+- **`--as-of <date>`** on every command. It moves the clock every countdown is
+  measured from and nothing else, so `plan --from ubuntu-latest --as-of
+  2026-10-19` answers what the report will say on the first day of the rollout
+  without pretending the run happened then. It is also what makes the migration
+  tests deterministic.
+
+- `init` refusing a floating label now points at the migration when there is one,
+  instead of only saying "pass a concrete label".
+
+### Changed
+
+- `resolveManifestVersions` moved from `src/cli.mjs` to `src/manifest.mjs`, where
+  the rest of the manifest reading lives, and is re-exported from `cli.mjs` so
+  the public surface is unchanged. The migration lane needed it and importing it
+  from the CLI would have made a cycle.
+
+[1.4.0]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.4.0
+
 ## [1.3.0] — 2026-09-13
 
 ### Added

@@ -20,14 +20,23 @@
 
 import { fetchText, NotFoundError, DriftError } from './http.mjs';
 import { RAW_BASE, pathForLabel } from './labels.mjs';
+import { manifestCandidates } from './tools.mjs';
 
-const HEADER_KEYS = new Set([
-  'os version',
-  'image version',
-  'kernel version',
-  'systemd version',
-  'image release',
-]);
+/**
+ * The bullets at the top that describe the image itself rather than something
+ * installed on it. Kernel and systemd are here because they are exactly what
+ * changes when a floating label is re-pointed at a new OS, and nothing else in
+ * the manifest records the OS swap.
+ */
+const HEADER_FIELDS = {
+  'os version': 'osVersion',
+  'image version': 'imageVersion',
+  'kernel version': 'kernelVersion',
+  'systemd version': 'systemdVersion',
+};
+
+/** `image release` has no field of its own; it is only ever suppressed. */
+const HEADER_KEYS = new Set([...Object.keys(HEADER_FIELDS), 'image release']);
 
 /** Sections whose tables list SDK sub-packages rather than host tools. */
 const SKIP_TABLE_SECTIONS = new Set(['android']);
@@ -131,15 +140,15 @@ function isSeparatorRow(cells) {
 /**
  * Parse a manifest markdown document.
  * @returns {{label:string|null, title:string|null, osVersion:string|null,
- *            imageVersion:string|null, tools:Record<string,string[]>,
+ *            imageVersion:string|null, kernelVersion:string|null,
+ *            systemdVersion:string|null, tools:Record<string,string[]>,
  *            toolSections:Record<string,string>}}
  */
 export function parseManifest(markdown, label = null) {
   const lines = String(markdown ?? '').split(/\r?\n/);
   const tools = Object.create(null);
   const toolSections = Object.create(null);
-  let osVersion = null;
-  let imageVersion = null;
+  const header = { osVersion: null, imageVersion: null, kernelVersion: null, systemdVersion: null };
   let title = null;
   let section = '';
   let subsection = '';
@@ -199,15 +208,15 @@ export function parseManifest(markdown, label = null) {
       continue;
     }
 
-    const osM = line.match(/^[ \t]*-[ \t]+OS Version:[ \t]*([^\r\n]+)/i);
-    if (osM) {
-      osVersion ??= osM[1].trim();
-      continue;
-    }
-    const ivM = line.match(/^[ \t]*-[ \t]+Image Version:[ \t]*([^\r\n]+)/i);
-    if (ivM) {
-      imageVersion ??= ivM[1].trim();
-      continue;
+    // `[^:\r\n]+` up to the colon and no `$` at the end: the key cannot run past
+    // its own delimiter and there is no failure condition to backtrack over.
+    const headerM = line.match(/^[ \t]*-[ \t]+([^:\r\n]+):[ \t]*([^\r\n]+)/);
+    if (headerM) {
+      const field = HEADER_FIELDS[headerM[1].trim().toLowerCase()];
+      if (field) {
+        header[field] ??= headerM[2].trim();
+        continue;
+      }
     }
 
     if (/^\s*-\s+/.test(line)) {
@@ -275,7 +284,7 @@ export function parseManifest(markdown, label = null) {
   }
 
   // Plain objects out (the accumulators are null-prototype to stay collision-free).
-  return { label, title, osVersion, imageVersion, tools: { ...tools }, toolSections: { ...toolSections } };
+  return { label, title, ...header, tools: { ...tools }, toolSections: { ...toolSections } };
 }
 
 /** Build the raw URL for a label's manifest at a given git ref. */
@@ -333,4 +342,19 @@ export function lookupTool(manifest, candidates) {
     if (hit) return { name: hit, versions: manifest.tools[hit] };
   }
   return null;
+}
+
+/**
+ * Resolve canonical tool names against a parsed manifest.
+ * @returns {{map:Record<string,string[]>, missing:string[]}}
+ */
+export function resolveManifestVersions(manifest, tools) {
+  const map = {};
+  const missing = [];
+  for (const t of tools) {
+    const hit = lookupTool(manifest, manifestCandidates(t));
+    if (hit) map[t] = hit.versions;
+    else missing.push(t);
+  }
+  return { map, missing };
 }

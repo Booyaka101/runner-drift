@@ -33,8 +33,9 @@ export const LABEL_PATHS = {
 
 /**
  * Floating labels cannot be resolved offline — GitHub moves them without
- * changing the label. `plan` refuses them; `guard` resolves them from the
- * ImageOS env var that the real runner exports.
+ * changing the label. `guard` resolves them from the ImageOS env var that the
+ * real runner exports; `plan` refuses one as a diff endpoint, except where
+ * MIGRATIONS below names the two concrete labels a move goes between.
  */
 export const FLOATING_LABELS = new Set(['ubuntu-latest', 'windows-latest', 'macos-latest']);
 
@@ -177,4 +178,170 @@ export function retirementStatus(label, now = new Date()) {
     source: dl.source,
     sourceRef: dl.sourceRef,
   };
+}
+
+/* ------------------------------------------------- floating-label migrations */
+
+/**
+ * Scheduled migrations of a floating label, transcribed from the changelog.
+ *
+ * Deliberately not part of DEADLINES. A deadline retires a concrete label and
+ * offers destinations you choose between (`migrateTo`); a migration is GitHub
+ * re-pointing a floating label from one image to another on dates you do not
+ * get to pick, and the label itself never changes. Nothing in DEADLINES can say
+ * that, which is why `starts`/`ends` are new fields rather than an overload.
+ *
+ * Verified 2026-09-20 against the changelog and actions/runner-images#14748.
+ * Adding windows-latest or macos-latest later is a pure data addition.
+ */
+export const MIGRATIONS = {
+  'ubuntu-latest': {
+    from: 'ubuntu-24.04',
+    to: 'ubuntu-26.04',
+    starts: '2026-10-19',
+    ends: '2026-11-19',
+    announced: '2026-09-17',
+    source: 'https://github.com/actions/runner-images/issues/14748',
+    sourceRef: 'actions/runner-images#14748',
+    changelog:
+      'https://github.blog/changelog/2026-09-17-ubuntu-26-generally-available-and-latest-migration/',
+  },
+};
+
+/** Where today sits relative to the rollout window. */
+export const MIGRATION_PHASE = {
+  PENDING: 'pending',
+  IN_WINDOW: 'in-window',
+  SETTLED: 'settled',
+};
+
+/** The window crossed with the image this runner actually served. */
+export const MIGRATION_STATE = {
+  PENDING: 'pending',
+  MOVED_EARLY: 'moved-early',
+  NOT_YET_MIGRATED: 'not-yet-migrated',
+  AMBIGUOUS: 'ambiguous',
+  MIGRATED: 'migrated',
+  SETTLED: 'settled',
+  STALE: 'stale',
+  UNEXPECTED: 'unexpected',
+};
+
+/**
+ * phase x observed image -> state. A table rather than a chain of conditionals:
+ * every cell is a different sentence in the report, and a missing one would be
+ * a silent fallthrough.
+ */
+const STATE_BY_PHASE = {
+  [MIGRATION_PHASE.PENDING]: {
+    none: MIGRATION_STATE.PENDING,
+    from: MIGRATION_STATE.PENDING,
+    to: MIGRATION_STATE.MOVED_EARLY,
+  },
+  [MIGRATION_PHASE.IN_WINDOW]: {
+    none: MIGRATION_STATE.AMBIGUOUS,
+    from: MIGRATION_STATE.NOT_YET_MIGRATED,
+    to: MIGRATION_STATE.MIGRATED,
+  },
+  [MIGRATION_PHASE.SETTLED]: {
+    none: MIGRATION_STATE.SETTLED,
+    from: MIGRATION_STATE.STALE,
+    to: MIGRATION_STATE.MIGRATED,
+  },
+};
+
+/** The announced migration of a floating label, or null when there is none. */
+export function migrationFor(label) {
+  return MIGRATIONS[label] ?? null;
+}
+
+/**
+ * The announced migration that moves between these two concrete labels, or null.
+ *
+ * Pure table lookup, no dates and no network, so `guard` can name the cause of a
+ * lock-to-runner jump even when the migration lane itself was not asked for.
+ */
+export function migrationBetween(from, to) {
+  for (const [label, m] of Object.entries(MIGRATIONS)) {
+    if (m.from === from && m.to === to) return { label, ...m };
+  }
+  return null;
+}
+
+/** Floating labels runner-drift has a migration window for. */
+export function migratingLabels() {
+  return Object.keys(MIGRATIONS);
+}
+
+/**
+ * Classify a floating label against its migration window.
+ *
+ * `imageOS` is the env var a real runner exports, so on a hosted runner the
+ * calendar answer is checked against the image that actually turned up. Without
+ * it the calendar alone still decides pending and settled; only inside the
+ * window is the answer genuinely unknowable, since that is the month where the
+ * same label is two operating systems.
+ *
+ * @returns {object|null} null when the label has no announced migration
+ */
+export function migrationStatus(label, { now = new Date(), imageOS = null } = {}) {
+  const m = MIGRATIONS[label];
+  if (!m) return null;
+
+  // The changelog states calendar dates, so both ends are inside the window.
+  // Phase therefore turns on the same whole-day countdown the report prints:
+  // when the output says "starts 2026-10-19 (0 days)", it is in the window.
+  const daysToStart = daysUntilDate(m.starts, now);
+  const daysToEnd = daysUntilDate(m.ends, now);
+  const phase =
+    daysToStart > 0
+      ? MIGRATION_PHASE.PENDING
+      : daysToEnd >= 0
+        ? MIGRATION_PHASE.IN_WINDOW
+        : MIGRATION_PHASE.SETTLED;
+
+  // An ImageOS this build does not recognise reads as no observation at all:
+  // guard already reports an unknown ImageOS on its own, and guessing here
+  // would turn a new image name into a fake anomaly.
+  const observed = imageOS ? (IMAGE_OS_TO_LABEL[String(imageOS).toLowerCase()] ?? null) : null;
+  const seen = observed === null ? 'none' : observed === m.to ? 'to' : observed === m.from ? 'from' : 'other';
+  const state = seen === 'other' ? MIGRATION_STATE.UNEXPECTED : STATE_BY_PHASE[phase][seen];
+
+  return {
+    label,
+    from: m.from,
+    to: m.to,
+    starts: m.starts,
+    ends: m.ends,
+    announced: m.announced,
+    phase,
+    state,
+    daysToStart,
+    daysToEnd,
+    imageOS: imageOS ?? null,
+    observed,
+    anomaly: state === MIGRATION_STATE.STALE || state === MIGRATION_STATE.UNEXPECTED,
+    done:
+      state === MIGRATION_STATE.MIGRATED ||
+      state === MIGRATION_STATE.MOVED_EARLY ||
+      state === MIGRATION_STATE.SETTLED,
+    source: m.source,
+    sourceRef: m.sourceRef,
+    changelog: m.changelog,
+  };
+}
+
+/**
+ * Should `--fail-on-migration <days>` fail on this status?
+ *
+ * An anomaly always fires, whatever the threshold, the same rule the retirement
+ * lane uses for an already-retired label: a label serving an image the window
+ * says it should have left is not a countdown, it is a fault.
+ */
+export function migrationFails(status, days) {
+  if (!status) return false;
+  if (status.anomaly) return true;
+  if (status.done) return false;
+  if (status.phase === MIGRATION_PHASE.IN_WINDOW) return true;
+  return Number.isFinite(days) && status.daysToStart !== null && status.daysToStart <= days;
 }

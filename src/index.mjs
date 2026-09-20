@@ -2,6 +2,7 @@
 
 export { main, runInit, runGuard, runPlan, runRunners, runActions, resolveManifestVersions, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from './cli.mjs';
 export { parseManifest, loadManifest, manifestUrl, lookupTool } from './manifest.mjs';
+export { IMAGE_FIELDS, imageDiffs, surveyMigration } from './migration.mjs';
 export {
   listManifestCommits,
   findCommitForImageVersion,
@@ -17,6 +18,7 @@ export {
   analyseWorkflow,
   extractLabels,
   extractLabelSites,
+  extractFloatingSites,
   extractRunsOnTargets,
   extractRunScripts,
   extractUses,
@@ -43,6 +45,12 @@ export {
   retirementFindings,
   retirementAnnotations,
   retirementSummaryMarkdown,
+  migrationMessage,
+  migrationHeader,
+  migrationLines,
+  migrationReport,
+  migrationAnnotations,
+  migrationSummaryMarkdown,
   runnerGroupDetail,
   runnersReport,
   runnersAnnotations,
@@ -98,12 +106,20 @@ export {
 export {
   LABEL_PATHS,
   DEADLINES,
+  MIGRATIONS,
+  MIGRATION_PHASE,
+  MIGRATION_STATE,
   IMAGE_OS_TO_LABEL,
   API_BASE,
   RAW_HOST,
   knownLabels,
   deadlineFor,
   isFloating,
+  migratingLabels,
+  migrationBetween,
+  migrationFails,
+  migrationFor,
+  migrationStatus,
   nextBrownout,
   retirementStatus,
 } from './labels.mjs';

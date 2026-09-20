@@ -46,7 +46,7 @@ rolling: you have 30 days from each `actions/runner` release to install it, or
 [the Actions service stops queueing jobs to your runner](https://docs.github.com/en/actions/reference/runners/self-hosted-runners).
 `runner-drift runners` reads the dates straight from GitHub's API and names the
 runners that are about to go quiet. See
-[Self-hosted agent versions](#5-runner-drift-runners--self-hosted-agent-versions).
+[Self-hosted agent versions](#6-runner-drift-runners--self-hosted-agent-versions).
 
 Since 1.3.0 it watches a third clock, and this one is nearly out. GitHub
 [removes Node 20 from the hosted runner images on 2026-09-23](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/),
@@ -56,7 +56,16 @@ looks like a pin, and it is `node20`. So is `actions/upload-artifact@v4`.
 `runner-drift actions` resolves every `uses:` to the runtime the action really
 declares, follows composites and reusable workflows into whatever they call, and
 names the step that breaks rather than the line you wrote. See
-[which `uses:` survive](#6-runner-drift-actions--which-uses-survive-the-node-20-removal).
+[which `uses:` survive](#7-runner-drift-actions--which-uses-survive-the-node-20-removal).
+
+Since 1.4.0 it also covers the case where the label does not change but the image
+does. GitHub is moving `ubuntu-latest` from Ubuntu 24.04 to Ubuntu 26.04, rolling
+out [between 2026-10-19 and 2026-11-19](https://github.com/actions/runner-images/issues/14748).
+For that month `ubuntu-latest` is two different operating systems depending on
+which runner your job lands on, and nothing in your workflow file changes. `plan`
+resolves the floating label to the two concrete images GitHub named and diffs
+them, so you get the kernel and systemd deltas before the rollout reaches you.
+See [when a floating label moves](#5-when-a-floating-label-moves-under-you).
 
 - No account, no hosted service, no paid tier. Two endpoints only:
   `raw.githubusercontent.com` and `api.github.com`.
@@ -153,7 +162,12 @@ not move, so it is not in the table.
 runner-drift plan --from ubuntu-22.04 --to ubuntu-24.04
 runner-drift plan --from macos-14 --to macos-15 --tools python,node,dotnet
 runner-drift plan --from ubuntu-22.04 --to ubuntu-26.04 --json
+runner-drift plan --from ubuntu-latest          # resolved from the MIGRATIONS table
 ```
+
+`--to` is required except for a floating label with an announced migration, where
+GitHub has already named both ends. See
+[when a floating label moves](#5-when-a-floating-label-moves-under-you).
 
 ### 4. Fail before the brownout
 
@@ -191,11 +205,93 @@ When only a brownout falls inside the threshold the annotation is a `::warning`
 dates your builds break. The step summary gets a table (Label, Where, Next
 brownout, Fully unsupported, Migrate to, Source), `--json` gets a `retirement`
 block, and a label already past its date always fails, whatever the threshold.
-`ubuntu-latest` and friends float past retirements, so they are never flagged;
-neither is `self-hosted`. `runs-on: ${{ matrix.os }}` is resolved from the
+`ubuntu-latest` and friends float past retirements, so this lane never flags
+them; they get their own lane, [below](#5-when-a-floating-label-moves-under-you).
+`self-hosted` is never flagged at all. `runs-on: ${{ matrix.os }}` is resolved from the
 matrix values in the same file.
 
-### 5. `runner-drift runners` — self-hosted agent versions
+### 5. When a floating label moves under you
+
+`runs-on: ubuntu-latest` is not a pin, and once a year that matters. GitHub
+announced on 2026-09-17 that the label
+[migrates from Ubuntu 24.04 to Ubuntu 26.04 between 2026-10-19 and 2026-11-19](https://github.com/actions/runner-images/issues/14748).
+During the rollout the label means whichever image your job happens to land on,
+so a build can pass and fail on the same commit with nothing to diff.
+
+`src/labels.mjs` carries the announced moves in a `MIGRATIONS` table, keyed by
+floating label, holding the two concrete labels, the window and the source issue.
+That is enough for `plan` to stop refusing the floating label and diff the two
+real images instead:
+
+```
+$ npx runner-drift plan --from ubuntu-latest
+ubuntu-latest moves from ubuntu-24.04 to ubuntu-26.04. The rollout starts 2026-10-19 (18 days) and finishes 2026-11-19 (49 days).
+announced 2026-09-17; source actions/runner-images#14748 https://github.com/actions/runner-images/issues/14748
+ubuntu-24.04 -> ubuntu-26.04 (images 20260907.300.1 -> 20260907.131.1)
+ubuntu-24.04 has no announced deprecation deadline in runner-drift's table.
+
+OS 24.04.5 LTS -> 26.04.1 LTS  MAJOR
+Kernel 6.17.0-1022-azure -> 7.0.0-1012-azure  MAJOR
+Systemd 255.4-1ubuntu8.17 -> 259.5-0ubuntu3.4  MAJOR
+
+CMake 3.31.6 -> 4.4.3  MAJOR
+Node.js 22.23.2 -> 24.20.0  MAJOR
+Python 3.12.3 -> 3.14.4  MINOR
+
+3 of 3 detected tool(s) change
+```
+
+(Real output against the live manifests, run with `--as-of 2026-10-01` for the
+countdown and the fixture workflow in `test/fixtures/workflows-migration`.)
+
+In CI, `guard --fail-on-migration <days>` scans the `runs-on:` lines for floating
+labels with an announced move and fails while the window is still ahead of you:
+
+```yaml
+  runner-migration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: Booyaka101/runner-drift@v1
+        with:
+          fail-on-migration: 30   # or: npx runner-drift guard --fail-on-migration 30
+```
+
+It is opt-in, like `fail-on-retirement`: without the input, `guard` does not fetch
+the two manifests at all. What it reports depends on where today sits in the
+window, and on the `ImageOS` the runner exported:
+
+| Phase | `ImageOS` | Reported as |
+| --- | --- | --- |
+| Before the window | — | `::notice`, the window and the countdown |
+| In the window | the old image | `::warning`, this runner has not moved yet and the diff is still ahead of you |
+| In the window | the new image | `::notice`, the migration has reached this runner |
+| In the window | absent | `::warning`, which of the two this job got cannot be told |
+| After the window | the new image | `::notice`, the move is done |
+| After the window | the old image | `::error`, an anomaly rather than drift |
+
+The last row is the one worth having. A runner still serving Ubuntu 24.04 in
+December, when the label is supposed to mean 26.04 everywhere, is not a version
+bump you should record in the lock file.
+
+One part of this needs no input at all. When `guard` finds real tool drift and the
+jump from the lock's image to the runner's image is exactly an announced move, it
+says so, because that is a table lookup rather than a check you have to opt into:
+
+```
+ubuntu-26.04 image 20260907.300.1 -> 20260907.131.1
+Explained by the scheduled ubuntu-latest migration ubuntu-24.04 -> ubuntu-26.04 (2026-10-19 to 2026-11-19); the tool versions below moved with the image.
+  CMake 3.31.6 -> 4.4.3  MAJOR  [20260907.131.1] https://github.com/actions/runner-images/commit/90ebb6f508835349239c3823c663eba7af98f23d
+```
+
+Exit codes and the `--fail-on` thresholds are untouched by any of this. An
+anomaly fails whatever the threshold, the same rule `--fail-on-retirement` uses
+for a label already past its date. `--json` gains a `migration` block, and the
+step summary gains a table (Label, Phase, Move, Window, This runner, Source).
+Adding `windows-latest` or `macos-latest` later is a data change in `MIGRATIONS`,
+nothing else.
+
+### 6. `runner-drift runners` — self-hosted agent versions
 
 Two clocks run on a self-hosted runner. The image one does not apply, since you
 built the machine. The **agent** one does. GitHub requires each new
@@ -353,7 +449,7 @@ listing and reports that runner's own dates in the summary table and `--json`.
 Without a token, or without the permission, it prints the same `::notice` it
 printed in 1.1.0 and exits 0. That is the common case, not an error path.
 
-### 6. `runner-drift actions` — which `uses:` survive the Node 20 removal
+### 7. `runner-drift actions` — which `uses:` survive the Node 20 removal
 
 GitHub switched the hosted runners' default action runtime to Node 24 on
 2026-06-16 and [removes Node 20 from the images on 2026-09-23](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/).
@@ -451,9 +547,10 @@ summary table, and sets a `will-fail-count` output.
 | `--lock-file <path>` | `init`, `guard` | `runner-lock.json` | Lock file location |
 | `--tools <a,b,c>` | all | detected | Override detection. Aliases (`python`, `npx`, `clang++`, `g++`, `javac`, …) resolve to manifest names; anything else is matched against the manifest case-insensitively, so `--tools Terraform,Kotlin` works |
 | `--label <label>` | `init` | detected | Explicit runner label |
-| `--from` / `--to` | `plan` | — | Runner labels to compare (required) |
+| `--from` / `--to` | `plan` | — | Runner labels to compare. `--to` is required unless `--from` is a floating label with an announced migration |
 | `--fail-on <level>` | `guard` | never fail | `major`, `minor` or `any` |
 | `--fail-on-retirement <days>` | `guard` | off | Fail when a pinned label retires or browns out within N days |
+| `--fail-on-migration <days>` | `guard` | off | Fail when a floating label's announced migration starts within N days, or this runner is on the wrong side of it |
 | `--org <name>` | `runners` | — | Organization to survey. Mutually exclusive with `--repo` |
 | `--repo <owner/repo>` | `runners` | `$GITHUB_REPOSITORY` | Repository to survey |
 | `--fail-on-deprecation <days>` | `runners`, `guard` | report only, window 30 | Set the window **and** fail when a runner version's support ends inside it |
@@ -462,10 +559,12 @@ summary table, and sets a `will-fail-count` output.
 | `--json` | all | off | Machine-readable output |
 | `--no-summary` | `guard`, `runners`, `actions` | on | Skip the `$GITHUB_STEP_SUMMARY` write |
 | `--no-update-lock` | `guard` | on | Report drift but leave the lock file untouched |
+| `--as-of <date>` | `guard`, `plan`, `runners`, `actions` | today | Measure every countdown from this date instead. Nothing else is faked, so it answers "what will this say on the 19th?" |
 
 Exit codes: `0` success (including "drift found" without `--fail-on`, a refused
 permission, and an empty fleet), `1` drift at or above the `--fail-on` threshold,
-a label inside the `--fail-on-retirement` window, a runner version inside the
+a label inside the `--fail-on-retirement` window, a floating label inside the
+`--fail-on-migration` window, a runner version inside the
 `--fail-on-deprecation` window, an `EXPIRED` runner version at any threshold, or
 an action reference that stops working when Node 20 is removed (`actions`, unless
 `--warn-only`), an unresolved reference under `--fail-on-unknown`, `2` usage /
@@ -478,13 +577,14 @@ configuration error.
 | `mode` | `guard` | Which command the action runs: `guard`, `actions` or `runners` |
 | `fail-on` | `''` | `major`, `minor`, `any`; empty means report only |
 | `fail-on-retirement` | `''` | Days ahead to fail on a label retirement or brownout; empty disables |
+| `fail-on-migration` | `''` | Days ahead to fail on an announced floating-label migration; empty disables |
 | `fail-on-deprecation` | `''` | Days ahead to fail on this self-hosted runner's own agent version; empty disables. Needs `github-token` to carry administration read |
 | `warn-only` | `false` | `mode: actions` only. Annotate and summarise every failing reference, but never fail the job |
 | `fail-on-unknown` | `false` | `mode: actions` only. Treat a reference that could not be resolved as a failure |
 | `tools` | `''` | Comma-separated override |
 | `lock-file` | `runner-lock.json` | Lock file path |
 | `workflows` | `.github/workflows` | Scanned when there is no lock yet |
-| `version` | `1.3.0` | npm version of `runner-drift` to run |
+| `version` | `1.4.0` | npm version of `runner-drift` to run |
 | `package` | `''` | Override the npm spec, e.g. a `.tgz` built in the same job. Only useful for testing the action before the version it requests is published |
 | `github-token` | `${{ github.token }}` | Rate limit, plus the runner listing for `fail-on-deprecation` (which the default token cannot read) |
 
@@ -679,12 +779,27 @@ large/xlarge labels have no public manifest, so they get the retirement
 countdown and `--fail-on-retirement`, not the tool diff. Every other label
 diffs fine, it just has no countdown.
 
+Migration data covers the floating labels GitHub has announced a move for:
+`ubuntu-latest` (`ubuntu-24.04` -> `ubuntu-26.04`, 2026-10-19 to 2026-11-19,
+[#14748](https://github.com/actions/runner-images/issues/14748)). That issue covers
+the x64 label only, so `ubuntu-latest-arm` has no entry and is left alone. `MIGRATIONS` in
+`src/labels.mjs` is separate from the retirement `DEADLINES` table, because a
+migration is a dated window between two live images and a retirement is an end
+date for one.
+
 ## Limitations
 
-- **Floating labels are refused, on purpose.** `ubuntu-latest` / `macos-latest`
-  are re-pointed by GitHub without notice, so `plan` will not guess what they
-  mean — pass the concrete label. `guard` does not need to guess: it reads the
-  real label from the runner's `ImageOS` env var at run time.
+- **Floating labels are refused, on purpose, except where GitHub said otherwise.**
+  `ubuntu-latest` / `macos-latest` are re-pointed by GitHub without notice, so
+  `plan` will not guess what they mean — pass the concrete label. The exception is
+  a label in `MIGRATIONS`, where GitHub has published both ends and the dates;
+  there `plan --from ubuntu-latest` diffs the two images it named, and still
+  refuses a floating `--to`. `guard` does not need to guess either way: it reads
+  the real label from the runner's `ImageOS` env var at run time.
+- **Migration windows are a hardcoded table too, and only cover announced moves.**
+  GitHub publishes no feed for these, so `MIGRATIONS` needs a release when a new
+  move is announced. A floating label with no entry behaves exactly as it did
+  before 1.4.0.
 - **Image deadlines are a hardcoded table; runner-version deadlines are not.**
   The `runs-on` label dates in `src/labels.mjs` are transcribed from
   [#14254](https://github.com/actions/runner-images/issues/14254) and

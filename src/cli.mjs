@@ -15,12 +15,18 @@ import {
   deadlineFor,
   isFloating,
   knownLabels,
+  migratingLabels,
+  migrationFails,
+  migrationBetween,
+  migrationFor,
+  migrationStatus,
   normaliseLabel,
 } from './labels.mjs';
-import { loadManifest, lookupTool } from './manifest.mjs';
+import { loadManifest, resolveManifestVersions } from './manifest.mjs';
+import { imageDiffs, surveyMigration } from './migration.mjs';
 import { attribute, commitWindow, attributeChanges, listManifestCommits, manifestAtSha } from './history.mjs';
 import { detect, SELF_HOSTED } from './detect.mjs';
-import { canonicalTool, manifestCandidates, knownTools, MANIFEST_CANDIDATES } from './tools.mjs';
+import { canonicalTool, knownTools, MANIFEST_CANDIDATES } from './tools.mjs';
 import { probeTool, isProbeable } from './probe.mjs';
 import { diffTool, shouldFail, maxSeverity } from './diff.mjs';
 import { readLock, writeLock, DEFAULT_LOCK_FILE, toolsEntry, toVersionMap } from './lock.mjs';
@@ -32,6 +38,10 @@ import {
   retirementFindings,
   retirementAnnotations,
   retirementSummaryMarkdown,
+  migrationAnnotations,
+  migrationMessage,
+  migrationReport,
+  migrationSummaryMarkdown,
   runnersReport,
   runnersAnnotations,
   runnersSummaryMarkdown,
@@ -50,6 +60,8 @@ import {
   surveyRunners,
 } from './runners.mjs';
 
+export { resolveManifestVersions };
+
 export const EXIT_OK = 0;
 export const EXIT_DRIFT = 1;
 export const EXIT_USAGE = 2;
@@ -61,7 +73,7 @@ async function version() {
     const pkg = JSON.parse(await readFile(path.join(HERE, '..', 'package.json'), 'utf8'));
     return pkg.version;
   } catch {
-    return '1.3.0';
+    return '1.4.0';
   }
 }
 
@@ -71,6 +83,8 @@ Usage:
   runner-drift init  [options]                 Record a baseline runner-lock.json
   runner-drift guard [options]                 (in-workflow) diff live runner vs the lock
   runner-drift plan  --from <label> --to <label>   Preview a runner label migration
+  runner-drift plan  --from <floating label>   Preview the move GitHub has announced
+                                               for that label (e.g. ubuntu-latest)
   runner-drift runners [--org <name> | --repo <owner/repo>]
                                                Self-hosted runner agent versions vs
                                                GitHub's end-of-support dates
@@ -86,12 +100,16 @@ Options:
   --to <label>          target runner label           (plan)
   --fail-on <level>     major | minor | any           (guard, default: never fail)
   --fail-on-retirement <days>   fail if a pinned label retires within N days (guard)
+  --fail-on-migration <days>    report, and fail on, an announced floating-label
+                                migration starting within N days (guard)
   --org <name>          organization to survey             (runners)
   --repo <owner/repo>   repository to survey               (runners, default: $GITHUB_REPOSITORY)
   --fail-on-deprecation <days>  fail if a runner version's support ends within N days
                                 (runners, guard; default window ${DEFAULT_DEPRECATION_WINDOW_DAYS})
   --warn-only           report but always exit 0             (actions)
   --fail-on-unknown     fail when a uses: cannot be resolved (actions)
+  --as-of <date>        evaluate every countdown as if it were this date, e.g.
+                        --as-of 2026-10-19 (guard, plan, runners, actions)
   --json                machine-readable output
   --no-summary          do not write $GITHUB_STEP_SUMMARY (guard, runners, actions)
   --no-update-lock      do not rewrite the lock file  (guard)
@@ -113,7 +131,9 @@ export const OPTIONS = {
   to: { type: 'string' },
   'fail-on': { type: 'string' },
   'fail-on-retirement': { type: 'string' },
+  'fail-on-migration': { type: 'string' },
   'fail-on-deprecation': { type: 'string' },
+  'as-of': { type: 'string' },
   org: { type: 'string' },
   repo: { type: 'string' },
   'warn-only': { type: 'boolean', default: false },
@@ -153,18 +173,6 @@ function parseToolList(csv) {
   return [...new Set(list)];
 }
 
-/** Resolve canonical tool names against a parsed manifest. */
-export function resolveManifestVersions(manifest, tools) {
-  const map = {};
-  const missing = [];
-  for (const t of tools) {
-    const hit = lookupTool(manifest, manifestCandidates(t));
-    if (hit) map[t] = hit.versions;
-    else missing.push(t);
-  }
-  return { map, missing };
-}
-
 /**
  * Reduce a raw `runs-on` label set to the hosted-image labels worth resolving.
  * Self-hosted runners carry arbitrary extra tags (`linux`, `gpu`, `x64`), so
@@ -184,6 +192,23 @@ function concreteLabels(labels) {
 
 function out(stream, line) {
   stream.write(`${line}\n`);
+}
+
+/**
+ * `--as-of`: the date every countdown is measured from. Nothing here is
+ * inferred from it, so it answers "what will this say on the 19th?" without
+ * pretending the run happened then.
+ * @returns {{now?:Date}|null} null once the error is reported
+ */
+function asOf(opts, io) {
+  if (opts['as-of'] === undefined) return {};
+  const raw = String(opts['as-of']);
+  const at = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00Z` : raw);
+  if (!Number.isFinite(at)) {
+    out(io.stderr, `--as-of needs a date such as 2026-10-19 (got "${raw}")`);
+    return null;
+  }
+  return { now: new Date(at) };
 }
 
 /** A `--fail-on-*` threshold in whole days, or null once the error is reported. */
@@ -208,6 +233,19 @@ function summarise(io, items, keyOf, lineOf) {
 }
 
 /**
+ * The workflow scan the two lint lanes start from, or null when there is no
+ * workflow directory — which is a notice on both streams, not an error.
+ */
+async function scanForLane(opts, io, nothingToCheck) {
+  const scanned = await detect(opts.workflows ?? path.join('.github', 'workflows'));
+  if (!scanned.missing) return scanned;
+  const msg = `No workflow directory at ${scanned.dir} — ${nothingToCheck}.`;
+  out(io.stdout, notice(msg));
+  out(io.stdout, msg);
+  return null;
+}
+
+/**
  * `--fail-on-retirement`: every pinned label that retires or browns out inside
  * the window. Reads the workflow files alone, so it works in a lint job with no
  * lock file and no hosted runner. Returns null on a bad value, already reported.
@@ -215,13 +253,9 @@ function summarise(io, items, keyOf, lineOf) {
 async function checkRetirement(opts, io, now) {
   const days = wholeDays(opts['fail-on-retirement'], '--fail-on-retirement', io);
   if (days === null) return null;
-  const scanned = await detect(opts.workflows ?? path.join('.github', 'workflows'));
-  if (scanned.missing) {
-    const msg = `No workflow directory at ${scanned.dir} — no pinned labels to check for retirement.`;
-    out(io.stdout, notice(msg));
-    out(io.stdout, msg);
-    return { days, findings: [] };
-  }
+  const scanned = await scanForLane(opts, io, 'no pinned labels to check for retirement');
+  if (!scanned) return { days, findings: [] };
+
   const findings = retirementFindings(scanned.labelSites, { now, days });
   for (const line of retirementAnnotations(findings)) out(io.stdout, line);
   if (findings.length && opts.summary) {
@@ -240,6 +274,51 @@ function reportRetirement(io, { days, findings }) {
       s.retired
         ? `runner-drift: ${s.label} has been fully unsupported since ${s.fullyUnsupported} (retired ${Math.abs(s.daysToUnsupported)} days ago) and --fail-on-retirement ${days} is set.`
         : `runner-drift: ${s.label} is fully unsupported on ${s.fullyUnsupported} (${s.daysToUnsupported} days) and --fail-on-retirement ${days} is set.`,
+  );
+}
+
+/**
+ * `--fail-on-migration`: every floating label in the workflows that GitHub has
+ * announced a move for, classified against its window and diffed across the two
+ * images it names. Opt-in like the retirement gate, and like it, useful in a
+ * plain lint job with no runner and no lock file.
+ */
+async function checkMigration(opts, io, now, imageOS, deps) {
+  const days = wholeDays(opts['fail-on-migration'], '--fail-on-migration', io);
+  if (days === null) return null;
+  const scanned = await scanForLane(opts, io, 'no floating labels to check for migration');
+  if (!scanned) return { days, surveys: [] };
+
+  const byLabel = new Map();
+  for (const site of scanned.floatingSites) {
+    if (!migrationFor(site.label)) continue;
+    if (!byLabel.has(site.label)) byLabel.set(site.label, []);
+    byLabel.get(site.label).push(site);
+  }
+  const tools = parseToolList(opts.tools) ?? scanned.tools;
+  const load = deps.loadManifest ?? loadManifest;
+  const surveys = await Promise.all(
+    [...byLabel].map(([label, sites]) =>
+      surveyMigration({ label, now, imageOS, tools, sites, load }),
+    ),
+  );
+
+  for (const line of migrationAnnotations(surveys)) out(io.stdout, line);
+  if (surveys.length && opts.summary) {
+    await writeStepSummary(migrationSummaryMarkdown(surveys));
+  }
+  return { days, surveys };
+}
+
+/** One stderr line per floating label whose migration fails the gate. */
+function reportMigration(io, { days, surveys }) {
+  summarise(
+    io,
+    surveys.filter((s) => migrationFails(s, days)),
+    (s) => s.label,
+    (s) =>
+      `runner-drift: ${migrationMessage(s)}` +
+      (s.anomaly ? '' : ` --fail-on-migration ${days} is set.`),
   );
 }
 
@@ -326,6 +405,12 @@ export async function runInit(opts, io = process) {
         out(io.stderr, 'Either pass the concrete label:  runner-drift init --label ubuntu-24.04');
         out(io.stderr, 'or just add the guard step to your workflow — `runner-drift guard` reads the real');
         out(io.stderr, 'label from the runner\'s ImageOS env var and writes the baseline itself.');
+        const migrating = floating.filter((l) => migrationFor(l));
+        if (migrating.length) {
+          out(io.stderr, '');
+          out(io.stderr, `Note: ${migrating.join(', ')} has an announced migration. Preview what changes:`);
+          out(io.stderr, `  runner-drift plan --from ${migrating[0]}`);
+        }
         return EXIT_USAGE;
       }
       out(io.stderr, `No runner label found in ${detected.dir}. Pass --label <label>.`);
@@ -449,6 +534,21 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   const imageVersion = env.ImageVersion ?? env.IMAGE_VERSION ?? null;
   const imageOS = env.ImageOS ?? env.IMAGE_OS ?? null;
 
+  // Migration needs only the workflow files too, but it does want ImageOS: on a
+  // hosted runner mid-window that is the difference between "the same label is
+  // two images right now" and "this job ran on the new one".
+  let migration = null;
+  if (opts['fail-on-migration'] !== undefined) {
+    migration = await checkMigration(opts, io, deps.now ?? new Date(), imageOS, deps);
+    if (!migration) return EXIT_USAGE;
+    if (!opts.json && migration.surveys.length) {
+      out(io.stdout, migrationReport(migration.surveys));
+    }
+  }
+  const migrating = migration?.surveys.some((s) => migrationFails(s, migration.days))
+    ? migration
+    : null;
+
   // A GitHub-hosted runner has no agent version of its own to check, so the flag
   // does nothing here. Say so: the action passes it to every job, and a flag that
   // silently no-ops reads as a broken flag.
@@ -472,14 +572,17 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     // version with a date on it. Without a token this is a no-op and the skip
     // above is the whole output, exactly as in 1.1.0.
     const own = await checkOwnRunner(opts, io, env, deps, window);
-    if (opts.json && own) {
-      const payload = { runners: own };
+    if (opts.json && (own || migration)) {
+      const payload = {};
+      if (own) payload.runners = own;
       if (retirement) payload.retirement = retirement;
+      if (migration) payload.migration = migration;
       out(io.stdout, JSON.stringify(payload, null, 2));
     }
     if (retiring) reportRetirement(io, retiring);
+    if (migrating) reportMigration(io, migrating);
     if (own?.failing) reportDeprecation(io, own);
-    return retiring || own?.failing ? EXIT_DRIFT : EXIT_OK;
+    return retiring || migrating || own?.failing ? EXIT_DRIFT : EXIT_OK;
   }
 
   const lock = await readLock(lockFile);
@@ -493,11 +596,9 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     const msg = `Unknown runner label (ImageOS="${imageOS ?? '(unset)'}") — skipping. Known: ${knownLabels().join(', ')}`;
     out(io.stdout, `::warning title=runner-drift::${msg}`);
     out(io.stdout, msg);
-    if (retiring) {
-      reportRetirement(io, retiring);
-      return EXIT_DRIFT;
-    }
-    return EXIT_OK;
+    if (retiring) reportRetirement(io, retiring);
+    if (migrating) reportMigration(io, migrating);
+    return retiring || migrating ? EXIT_DRIFT : EXIT_OK;
   }
 
   // Which tools to watch.
@@ -583,7 +684,12 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
       out(
         io.stdout,
         JSON.stringify(
-          retirement ? { baseline: true, lock: written, retirement } : { baseline: true, lock: written },
+          {
+            baseline: true,
+            lock: written,
+            ...(retirement ? { retirement } : {}),
+            ...(migration ? { migration } : {}),
+          },
           null,
           2,
         ),
@@ -595,11 +701,9 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
       for (const [t, v] of manifestOnly) out(io.stdout, `  ${t}: ${v.versions.join(', ')} (from manifest)`);
       out(io.stdout, `Wrote ${lockFile}. Commit it so the next image bump can be diffed.`);
     }
-    if (retiring) {
-      reportRetirement(io, retiring);
-      return EXIT_DRIFT;
-    }
-    return EXIT_OK;
+    if (retiring) reportRetirement(io, retiring);
+    if (migrating) reportMigration(io, migrating);
+    return retiring || migrating ? EXIT_DRIFT : EXIT_OK;
   }
 
   // Diff against the lock.
@@ -640,6 +744,16 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     }
   }
 
+  // Not unexplained drift: the lock was taken on the image the window moves
+  // away from, and this runner served the one it moves to. The table lookup is
+  // the fallback for a run without --fail-on-migration, where the lane never
+  // built a survey. The exit code is still --fail-on's to decide; this only
+  // names the cause.
+  const explained =
+    migration?.surveys.find(
+      (s) => s.done && s.observed === s.to && lock.label === s.from && label === s.to,
+    ) ?? migrationBetween(lock.label, label);
+
   const summary = stepSummaryMarkdown({
     label,
     fromImage: lock.imageVersion ?? '(unknown)',
@@ -663,11 +777,19 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   if (opts.json) {
     const payload = { label, from: lock.imageVersion, to: imageVersion, approximate, diffs, attribution: attributionMap };
     if (retirement) payload.retirement = retirement;
+    if (migration) payload.migration = { ...migration, explains: explained?.label ?? null };
     out(io.stdout, JSON.stringify(payload, null, 2));
   } else if (!changed.length) {
     out(io.stdout, `No drift — ${label} image ${lock.imageVersion} -> ${imageVersion}, ${diffs.length} tool(s) unchanged.`);
   } else {
     out(io.stdout, `${label} image ${lock.imageVersion} -> ${imageVersion}${approximate ? ' (attribution approximate)' : ''}`);
+    if (explained) {
+      out(
+        io.stdout,
+        `Explained by the scheduled ${explained.label} migration ${explained.from} -> ${explained.to}` +
+          ` (${explained.starts} to ${explained.ends}); the tool versions below moved with the image.`,
+      );
+    }
     for (const d of changed) {
       const a = attributionMap[d.tool];
       out(
@@ -683,7 +805,8 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     out(io.stderr, `runner-drift: ${maxSeverity(diffs).toUpperCase()} drift detected and --fail-on ${failOn} is set.`);
   }
   if (retiring) reportRetirement(io, retiring);
-  return driftFail || retiring ? EXIT_DRIFT : EXIT_OK;
+  if (migrating) reportMigration(io, migrating);
+  return driftFail || retiring || migrating ? EXIT_DRIFT : EXIT_OK;
 }
 
 /* -------------------------------------------------------------------- plan */
@@ -692,17 +815,31 @@ export async function runPlan(opts, io = process, deps = {}) {
   const load = deps.loadManifest ?? loadManifest;
   const now = deps.now ?? new Date();
 
-  const from = normaliseLabel(opts.from ?? '');
-  const to = normaliseLabel(opts.to ?? '');
+  let from = normaliseLabel(opts.from ?? '');
+  let to = normaliseLabel(opts.to ?? '');
+
+  // A floating --from on its own is the announced migration: resolve it to the
+  // two concrete labels the window names. With an explicit --to the user has
+  // already said what to compare, so the refusal below still applies.
+  const migration = from && !to ? migrationStatus(from, { now }) : null;
+  if (migration) {
+    from = migration.from;
+    to = migration.to;
+  }
+
   if (!from || !to) {
     out(io.stderr, 'plan needs both --from <label> and --to <label>.');
     out(io.stderr, 'e.g. runner-drift plan --from ubuntu-22.04 --to ubuntu-24.04');
+    out(io.stderr, `Floating labels with an announced migration need only --from: ${migratingLabels().join(', ')}`);
     return EXIT_USAGE;
   }
   for (const [flag, label] of [['--from', from], ['--to', to]]) {
     if (isFloating(label)) {
       out(io.stderr, `${flag} ${label} is a floating label — GitHub re-points it without notice.`);
       out(io.stderr, 'Pass the concrete label you want to compare, e.g. ubuntu-24.04 or ubuntu-26.04.');
+      if (migrationFor(label)) {
+        out(io.stderr, `Or drop --to: runner-drift plan --from ${label} diffs the two images GitHub announced.`);
+      }
       return EXIT_USAGE;
     }
   }
@@ -750,7 +887,9 @@ export async function runPlan(opts, io = process, deps = {}) {
           fromImage: a.imageVersion,
           toImage: b.imageVersion,
           deadline: deadlineFor(from),
+          migration,
           tools,
+          image: imageDiffs(a, b).filter((d) => d.changed),
           diffs: diffs.filter((d) => d.changed),
           unchanged: diffs.filter((d) => !d.changed).map((d) => d.tool),
           notOnManifest: missingBoth,
@@ -770,6 +909,8 @@ export async function runPlan(opts, io = process, deps = {}) {
       fromImage: a.imageVersion,
       toImage: b.imageVersion,
       diffs,
+      image: imageDiffs(a, b),
+      migration,
       detected: { missingFromManifest: missingBoth },
       now,
     }),
@@ -886,18 +1027,21 @@ export async function main(argv = process.argv.slice(2), io = process) {
     return opts.help ? EXIT_OK : EXIT_USAGE;
   }
 
+  const deps = asOf(opts, io);
+  if (!deps) return EXIT_USAGE;
+
   try {
     switch (command) {
       case 'init':
         return await runInit(opts, io);
       case 'guard':
-        return await runGuard(opts, io);
+        return await runGuard(opts, io, process.env, deps);
       case 'plan':
-        return await runPlan(opts, io);
+        return await runPlan(opts, io, deps);
       case 'runners':
-        return await runRunners(opts, io);
+        return await runRunners(opts, io, process.env, deps);
       case 'actions':
-        return await runActions(opts, io, { root: parsed.positionals[0] });
+        return await runActions(opts, io, { ...deps, root: parsed.positionals[0] });
       case 'help':
         out(io.stdout, USAGE);
         return EXIT_OK;

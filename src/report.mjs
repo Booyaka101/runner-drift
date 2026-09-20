@@ -12,7 +12,12 @@ import { appendFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { daysUntil } from './dates.mjs';
-import { deadlineFor, retirementStatus } from './labels.mjs';
+import {
+  MIGRATION_PHASE,
+  MIGRATION_STATE,
+  deadlineFor,
+  retirementStatus,
+} from './labels.mjs';
 import { REF_STATUS } from './runtimes.mjs';
 import {
   MINIMUM_REGISTRATION_VERSION,
@@ -82,16 +87,36 @@ export function deadlineLines(label, now = new Date()) {
 }
 
 /**
- * Full `plan` report.
+ * Full `plan` report. `image` is the manifest-header diff (OS, kernel, systemd)
+ * and `migration` the survey that resolved a floating label, both optional.
  * @returns {string}
  */
-export function planReport({ from, to, fromImage, toImage, diffs, detected, now = new Date() }) {
+export function planReport({
+  from,
+  to,
+  fromImage,
+  toImage,
+  diffs,
+  image = [],
+  migration = null,
+  detected,
+  now = new Date(),
+}) {
   const out = [];
+  // The migration headline first: when `plan` resolved a floating label, it is
+  // the reason these two concrete labels are being compared at all.
+  if (migration) out.push(...migrationHeader(migration));
   out.push(`${from} -> ${to} (images ${fromImage} -> ${toImage})`);
   const dl = deadlineLines(from, now);
   if (dl) out.push(...dl);
   else out.push(`${from} has no announced deprecation deadline in runner-drift's table.`);
   out.push('');
+
+  const imageChanged = image.filter((d) => d.changed);
+  if (imageChanged.length) {
+    for (const d of imageChanged) out.push(planRow(d));
+    out.push('');
+  }
 
   const changed = diffs.filter((d) => d.changed);
   if (!changed.length) {
@@ -313,6 +338,147 @@ export function retirementSummaryMarkdown(findings) {
       rows,
     ),
   ];
+  return `${lines.join('\n')}\n`;
+}
+
+/* ------------------------------------------------ floating-label migration */
+
+/**
+ * One sentence per state. Wording is the point of this lane: the same window
+ * means something different depending on whether the runner has moved yet, and
+ * a single generic warning would hide exactly that.
+ */
+const MIGRATION_SENTENCE = {
+  [MIGRATION_STATE.PENDING]: (s) =>
+    `${s.label} moves from ${s.from} to ${s.to}. The rollout starts ${dateWithCountdown(s.starts, s.daysToStart)} and finishes ${dateWithCountdown(s.ends, s.daysToEnd)}.`,
+  [MIGRATION_STATE.MOVED_EARLY]: (s) =>
+    `${s.label} already served ${s.to}, ahead of the announced rollout starting ${dateWithCountdown(s.starts, s.daysToStart)}.`,
+  [MIGRATION_STATE.NOT_YET_MIGRATED]: (s) =>
+    `${s.label} is migrating from ${s.from} to ${s.to} and this runner served ${s.from}. The rollout finishes ${dateWithCountdown(s.ends, s.daysToEnd)}; until then the same label is either image.`,
+  [MIGRATION_STATE.MIGRATED]: (s) =>
+    `The scheduled ${s.label} migration has reached this runner: ${s.from} -> ${s.to}, rollout ${s.starts} to ${s.ends}.`,
+  [MIGRATION_STATE.AMBIGUOUS]: (s) =>
+    `${s.label} is mid-rollout from ${s.from} to ${s.to}, finishing ${dateWithCountdown(s.ends, s.daysToEnd)}. No ImageOS was observed, so which of the two this job ran on is unknown.`,
+  [MIGRATION_STATE.SETTLED]: (s) =>
+    `${s.label} finished migrating from ${s.from} to ${s.to} on ${dateWithCountdown(s.ends, s.daysToEnd)}; it now means ${s.to}.`,
+  [MIGRATION_STATE.STALE]: (s) =>
+    `${s.label} served ${s.from}, but its migration to ${s.to} closed on ${dateWithCountdown(s.ends, s.daysToEnd)}. A runner still on the retired image after the window is an anomaly, not drift.`,
+  [MIGRATION_STATE.UNEXPECTED]: (s) =>
+    `${s.label} served ImageOS="${s.imageOS}", which is neither ${s.from} nor ${s.to}. runner-drift's migration window (${s.starts} to ${s.ends}) may be out of date.`,
+};
+
+const MIGRATION_KIND = {
+  [MIGRATION_STATE.PENDING]: 'notice',
+  [MIGRATION_STATE.MOVED_EARLY]: 'notice',
+  [MIGRATION_STATE.NOT_YET_MIGRATED]: 'warning',
+  [MIGRATION_STATE.MIGRATED]: 'notice',
+  [MIGRATION_STATE.AMBIGUOUS]: 'warning',
+  [MIGRATION_STATE.SETTLED]: 'notice',
+  [MIGRATION_STATE.STALE]: 'error',
+  [MIGRATION_STATE.UNEXPECTED]: 'error',
+};
+
+const MIGRATION_TITLE = {
+  [MIGRATION_STATE.PENDING]: (s) => `${s.label} becomes ${s.to} in ${s.daysToStart} days`,
+  [MIGRATION_STATE.MOVED_EARLY]: (s) => `${s.label} is already ${s.to}`,
+  [MIGRATION_STATE.NOT_YET_MIGRATED]: (s) => `${s.label} migration under way`,
+  [MIGRATION_STATE.MIGRATED]: (s) => `${s.label} is now ${s.to}`,
+  [MIGRATION_STATE.AMBIGUOUS]: (s) => `${s.label} migration under way`,
+  [MIGRATION_STATE.SETTLED]: (s) => `${s.label} is now ${s.to}`,
+  [MIGRATION_STATE.STALE]: (s) => `${s.label} still serving ${s.from}`,
+  [MIGRATION_STATE.UNEXPECTED]: (s) => `unrecognised image on ${s.label}`,
+};
+
+const MIGRATION_BADGE = {
+  [MIGRATION_PHASE.PENDING]: '🗓 pending',
+  [MIGRATION_PHASE.IN_WINDOW]: '🟠 in window',
+  [MIGRATION_PHASE.SETTLED]: '✅ settled',
+};
+
+/** The one sentence that describes a survey. No source link; callers add it. */
+export function migrationMessage(survey) {
+  return MIGRATION_SENTENCE[survey.state](survey);
+}
+
+/** The sentence and its source: the two lines every format leads with. */
+export function migrationHeader(survey) {
+  return [
+    migrationMessage(survey),
+    `announced ${survey.announced}; source ${survey.sourceRef} ${survey.source}`,
+  ];
+}
+
+/**
+ * Plain-text block for one survey: the sentence, the source, and whatever the
+ * manifests could tell us about the difference between the two images.
+ */
+export function migrationLines(survey) {
+  const lines = migrationHeader(survey);
+  const rows = [...survey.image, ...survey.toolDiffs];
+  if (rows.length) {
+    lines.push(`${survey.from} -> ${survey.to}:`);
+    for (const d of rows) lines.push(`  ${planRow(d)}`);
+  }
+  if (survey.notOnManifest.length) {
+    lines.push(`Not listed on either image manifest (skipped): ${survey.notOnManifest.join(', ')}`);
+  }
+  for (const n of survey.notes) lines.push(`Manifest diff unavailable: ${n}`);
+  return lines;
+}
+
+/** The whole `guard` migration block, one paragraph per floating label. */
+export function migrationReport(surveys) {
+  return surveys.flatMap((s, i) => (i ? ['', ...migrationLines(s)] : migrationLines(s))).join('\n');
+}
+
+/**
+ * `::notice`/`::warning`/`::error` per `runs-on:` site, so the message lands on
+ * the line that owns the floating label. A survey with no site on disk (guard
+ * reading the label from ImageOS with no workflow checkout) still gets one
+ * step-level annotation rather than none.
+ */
+export function migrationAnnotations(surveys) {
+  return surveys.flatMap((s) => {
+    const kind = MIGRATION_KIND[s.state];
+    const title = `runner-drift: ${MIGRATION_TITLE[s.state](s)}`;
+    const message = `${migrationMessage(s)} See ${s.source}`;
+    const sites = s.sites.length ? s.sites : [null];
+    return sites.map((site) => annotation(kind, title, message, site));
+  });
+}
+
+/** Step-summary table for migration surveys, with the image diff underneath. */
+export function migrationSummaryMarkdown(surveys) {
+  const rows = surveys.map((s) => [
+    `\`${s.label}\``,
+    MIGRATION_BADGE[s.phase],
+    `\`${s.from}\` → \`${s.to}\``,
+    `${dateWithCountdown(s.starts, s.daysToStart)} → ${dateWithCountdown(s.ends, s.daysToEnd)}`,
+    s.observed ? `\`${s.observed}\`` : '—',
+    `[${s.sourceRef}](${s.source})`,
+  ]);
+  const lines = [
+    '## runner-drift — floating label migration',
+    '',
+    ...markdownTable(['Label', 'Phase', 'Move', 'Window', 'This runner', 'Source'], rows),
+  ];
+  for (const s of surveys) {
+    lines.push('', migrationMessage(s));
+    const diffRows = [...s.image, ...s.toolDiffs];
+    if (!diffRows.length) continue;
+    lines.push(
+      '',
+      ...markdownTable(
+        [`\`${s.from}\` → \`${s.to}\``, 'From', 'To', 'Change'],
+        diffRows.map((d) => [
+          d.tool,
+          d.from.join(', ') || '(absent)',
+          d.to.join(', ') || '(absent)',
+          SEVERITY_BADGE[d.severity] ?? d.severity,
+        ]),
+      ),
+    );
+  }
   return `${lines.join('\n')}\n`;
 }
 

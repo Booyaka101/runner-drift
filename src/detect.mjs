@@ -225,22 +225,32 @@ export function extractLabels(text) {
 /**
  * Where each `runs-on` label sits: `{label, file, line, col}` per occurrence,
  * 1-indexed, `col` on the label text so a `file=,line=,col=` annotation lands
- * on it. Self-hosted and floating labels are skipped, having no fixed date to
- * retire on.
+ * on it. `keep` decides which labels are worth a site, because the two lanes
+ * that want one want disjoint halves of the same walk.
  */
-export function extractLabelSites(text, file = null) {
+function labelSitesWhere(text, file, keep) {
   const lines = String(text ?? '').split(/\r?\n/);
   const { found, expression } = scanRunsOn(lines);
   const seen = new Set();
   const sites = [];
   for (const { label, line, col } of expression ? [...found, ...matrixLabels(lines)] : found) {
-    if (label === SELF_HOSTED || isFloating(label)) continue;
+    if (!keep(label)) continue;
     const key = `${label}@${line}:${col}`;
     if (seen.has(key)) continue;
     seen.add(key);
     sites.push({ label, file, line, col });
   }
   return sites;
+}
+
+/** Pinned image labels: what the retirement lane dates. */
+export function extractLabelSites(text, file = null) {
+  return labelSitesWhere(text, file, (l) => l !== SELF_HOSTED && !isFloating(l));
+}
+
+/** Floating labels: what the migration lane dates, and nothing else can. */
+export function extractFloatingSites(text, file = null) {
+  return labelSitesWhere(text, file, isFloating);
 }
 
 /**
@@ -354,6 +364,7 @@ export function extractSetupActions(text) {
 export function analyseWorkflow(text, file = null) {
   const labels = extractLabels(text);
   const labelSites = extractLabelSites(text, file);
+  const floatingSites = extractFloatingSites(text, file);
   const runsOnTargets = extractRunsOnTargets(text, file);
   const uses = extractUses(text, file);
   const commands = new Set();
@@ -362,7 +373,16 @@ export function analyseWorkflow(text, file = null) {
   }
   const tools = new Set([...commands].map((c) => canonicalTool(c)));
   for (const t of setupTools(uses)) tools.add(t);
-  return { file, labels, labelSites, runsOnTargets, uses, commands: [...commands].sort(), tools: [...tools].sort() };
+  return {
+    file,
+    labels,
+    labelSites,
+    floatingSites,
+    runsOnTargets,
+    uses,
+    commands: [...commands].sort(),
+    tools: [...tools].sort(),
+  };
 }
 
 async function listWorkflowFiles(dir) {
@@ -382,7 +402,8 @@ async function listWorkflowFiles(dir) {
 /**
  * Scan a directory of workflows (or a single workflow file).
  * @returns {{dir:string, files:string[], labels:string[], labelSites:object[],
- *            tools:string[], perFile:object[], missing:boolean}}
+ *            floatingSites:object[], tools:string[], perFile:object[],
+ *            missing:boolean}}
  */
 export async function detect(workflowsPath) {
   const target = workflowsPath || path.join('.github', 'workflows');
@@ -403,6 +424,7 @@ export async function detect(workflowsPath) {
         files: [],
         labels: [],
         labelSites: [],
+        floatingSites: [],
         runsOnTargets: [],
         uses: [],
         tools: [],
@@ -415,6 +437,7 @@ export async function detect(workflowsPath) {
   const perFile = [];
   const labels = new Set();
   const labelSites = [];
+  const floatingSites = [];
   const runsOnTargets = [];
   const uses = [];
   const tools = new Set();
@@ -424,6 +447,7 @@ export async function detect(workflowsPath) {
     perFile.push(r);
     for (const l of r.labels) labels.add(l);
     labelSites.push(...r.labelSites);
+    floatingSites.push(...r.floatingSites);
     runsOnTargets.push(...r.runsOnTargets);
     uses.push(...r.uses);
     for (const t of r.tools) tools.add(t);
@@ -434,6 +458,7 @@ export async function detect(workflowsPath) {
     files,
     labels: [...labels].sort(),
     labelSites,
+    floatingSites,
     runsOnTargets,
     uses,
     tools: [...tools].sort(),
