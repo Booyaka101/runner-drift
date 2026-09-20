@@ -30,9 +30,9 @@ export const IMAGE_FIELDS = [
 const one = (v) => (v ? [v] : null);
 
 /**
- * Diff the manifest headers of two images. A field one side does not publish —
- * macOS and Windows manifests carry no kernel or systemd line — is not a
- * removal, so it diffs to `missing` and the `changed` filter drops it.
+ * Diff the manifest headers of two images. A field either side does not publish
+ * (Windows manifests carry no kernel line, and only Linux publishes systemd) is
+ * not a removal, so it diffs to `missing` and the `changed` filter drops it.
  */
 export function imageDiffs(from, to) {
   return IMAGE_FIELDS.map(([name, field]) => {
