@@ -151,6 +151,29 @@ test('--as-of rejects anything that is not a date', async () => {
   }
 });
 
+test('--as-of reads a time with no zone in UTC, like the countdowns it moves', async () => {
+  // Left to Date.parse a naive time is local, so the same calendar day lands on
+  // either side of midnight UTC depending on where the runner is.
+  const saved = process.env.ImageVersion;
+  delete process.env.ImageVersion;
+  const at = (asof) =>
+    run([
+      'guard', '--tools', 'node',
+      '--workflows', 'test/fixtures/workflows-retirement',
+      '--fail-on-retirement', '100',
+      '--as-of', asof,
+      '--no-summary',
+    ]);
+  try {
+    for (const form of ['2026-08-12', '2026-08-12T00:00:00', '2026-08-12 00:00', '2026-08-12T00:00:00Z']) {
+      const r = await at(form);
+      assert.match(r.stdout, /macos-14 retires in 82 days/, form);
+    }
+  } finally {
+    if (saved !== undefined) process.env.ImageVersion = saved;
+  }
+});
+
 test('--as-of moves every countdown, without a network call', async () => {
   const saved = process.env.ImageVersion;
   delete process.env.ImageVersion;

@@ -55,8 +55,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   is annotated according to where today sits in the window and which `ImageOS`
   the runner exported: pending, this runner has not moved yet, the migration has
   reached this runner, done, or, past the window on the old image, an anomaly.
-  The anomaly fails whatever the threshold, the same rule a label already past
-  its retirement date follows.
+  A rollout running past its announced end is annotated `::error` and reported,
+  and does not fail the build: GitHub ran both previous `latest` moves late, and
+  a failure no threshold turns off is one people remove the check over. An image
+  that is neither end of the window does fail whatever the threshold, because
+  that is the label meaning something nobody announced.
 
   `ImageOS` describes one runner, and that runner is serving one job, so it is
   read as evidence about a floating label only when the job it is running asked
@@ -87,8 +90,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - **`--as-of <date>`** on every command that counts down to something (`guard`, `plan`, `runners`, `actions`). It moves the clock every countdown is
   measured from and nothing else, so `plan --from ubuntu-latest --as-of
   2026-10-19` answers what the report will say on the first day of the rollout
-  without pretending the run happened then. It is also what makes the migration
-  tests deterministic.
+  without pretending the run happened then. A date, or a time with no zone, is
+  read as UTC, which is the calendar the countdowns themselves use. It is also
+  what makes the migration tests deterministic.
 
 - `init` refusing a floating label now points at the migration when there is one,
   instead of only saying "pass a concrete label".
@@ -151,6 +155,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   file. A fabricated id can match `GITHUB_JOB`, so it could have pointed the
   migration lane at the wrong `runs-on:` line. The map now ends where YAML ends
   it, at the next top-level key.
+
+- Every table keyed by a runner label answered `__proto__` and `constructor`
+  with something truthy, so `plan --from constructor` took the resolved-migration
+  branch and then reported that `--from` was missing. `deadlineFor`,
+  `pathForLabel` and `migrationFor` all read their tables as data now.
 
 - `ImageOS=__proto__` resolved to a label. The env value indexed the
   `ImageOS` -> label table directly, so any property of `Object.prototype` came

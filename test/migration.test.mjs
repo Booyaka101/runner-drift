@@ -7,11 +7,13 @@ import {
   MIGRATIONS,
   MIGRATION_PHASE,
   MIGRATION_STATE,
+  deadlineFor,
   labelForImageOS,
   migrationBetween,
   migrationFails,
   migrationFor,
   migrationStatus,
+  pathForLabel,
 } from '../src/labels.mjs';
 import { attributeImageOS, imageDiffs, surveyMigration } from '../src/migration.mjs';
 import { migrationAnnotations, migrationLines, migrationSummaryMarkdown } from '../src/report.mjs';
@@ -196,9 +198,14 @@ test('the gate fires inside the threshold, in the window, and on an anomaly', ()
 
   assert.equal(migrationFails(migrationStatus('ubuntu-latest', { now: DURING }), 0), true);
   assert.equal(
-    migrationFails(migrationStatus('ubuntu-latest', { now: AFTER, imageOS: 'ubuntu24' }), 0),
+    migrationFails(migrationStatus('ubuntu-latest', { now: AFTER, imageOS: 'ubuntu22' }), 0),
     true,
-    'an anomaly fires whatever the threshold',
+    'an image from outside the window fires whatever the threshold',
+  );
+  assert.equal(
+    migrationFails(migrationStatus('ubuntu-latest', { now: AFTER, imageOS: 'ubuntu24' }), 10000),
+    false,
+    'a rollout running late is reported, not failed',
   );
   assert.equal(
     migrationFails(migrationStatus('ubuntu-latest', { now: AFTER, imageOS: 'ubuntu26' }), 10000),
@@ -457,12 +464,24 @@ test('below the threshold it reports and exits 0', async () => {
   assert.equal(r.stderr, '');
 });
 
-test('a stale runner after the window fails whatever the threshold', async () => {
+test('a rollout still running late is an error annotation, not a red build', async () => {
+  // GitHub has slipped both previous `latest` moves. Nothing here is broken by
+  // that, and a threshold that cannot turn the failure off is one people fix by
+  // deleting the check.
   const env = { ImageOS: 'ubuntu24', GITHUB_JOB: 'build' };
+  const r = await guard({ tools: 'node', 'fail-on-migration': '0' }, env, AFTER);
+  assert.equal(r.code, EXIT_OK);
+  assert.match(r.stdout, /^::error file=/m);
+  assert.match(r.stdout, /still serving ubuntu-24\.04/);
+  assert.equal(r.stderr, '');
+});
+
+test('an image from outside the window fails whatever the threshold', async () => {
+  const env = { ImageOS: 'ubuntu22', GITHUB_JOB: 'build' };
   const r = await guard({ tools: 'node', 'fail-on-migration': '0' }, env, AFTER);
   assert.equal(r.code, EXIT_DRIFT);
   assert.match(r.stdout, /^::error file=/m);
-  assert.match(r.stderr, /anomaly, not drift/);
+  assert.match(r.stderr, /which is neither ubuntu-24\.04 nor ubuntu-26\.04/);
   assert.ok(!r.stderr.includes('--fail-on-migration 0 is set'), 'an anomaly is not a countdown');
 });
 
@@ -625,6 +644,15 @@ test('a matrix leg is trusted for the two images in the window and no others', (
   const off = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu22', sites: [site], here });
   assert.equal(off.imageOS, null, 'this runner is serving another leg');
   assert.match(off.note, /through a matrix/);
+});
+
+test('a label that names a property of Object is in none of the tables', () => {
+  // Labels come out of workflow files, so every table keyed by one is data.
+  for (const key of ['__proto__', 'constructor', 'toString']) {
+    assert.equal(migrationFor(key), null, key);
+    assert.equal(deadlineFor(key), null, key);
+    assert.equal(pathForLabel(key), null, key);
+  }
 });
 
 test('an ImageOS that names a property of Object is not an image', () => {

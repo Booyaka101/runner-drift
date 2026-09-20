@@ -52,15 +52,12 @@ export const IMAGE_OS_TO_LABEL = {
 };
 
 /**
- * The concrete label an `ImageOS` names, or null for anything else.
- *
- * `ImageOS` comes from the environment, so the table is read as data: a plain
- * property lookup answers `__proto__` and `constructor` with something truthy,
- * and the migration lane would report that as an image nobody announced.
+ * The concrete label an `ImageOS` names, or null for anything else. An
+ * unrecognised value reads as no observation at all, which is what the
+ * migration lane wants: a new image name is not an anomaly.
  */
 export function labelForImageOS(imageOS) {
-  const key = imageOS ? String(imageOS).toLowerCase() : '';
-  return Object.hasOwn(IMAGE_OS_TO_LABEL, key) ? IMAGE_OS_TO_LABEL[key] : null;
+  return imageOS ? lookup(IMAGE_OS_TO_LABEL, String(imageOS).toLowerCase()) : null;
 }
 
 const MACOS_14_BROWNOUTS = [
@@ -141,12 +138,21 @@ export function knownLabels() {
   return Object.keys(LABEL_PATHS);
 }
 
+/**
+ * Read a table with a key that came from a workflow file, an env var or argv.
+ * Own keys only: `__proto__` and `constructor` are labels nobody has, and every
+ * one of these tables answering them with something truthy is a wrong answer.
+ */
+function lookup(table, key) {
+  return typeof key === 'string' && Object.hasOwn(table, key) ? table[key] : null;
+}
+
 export function pathForLabel(label) {
-  return LABEL_PATHS[label] ?? null;
+  return lookup(LABEL_PATHS, label);
 }
 
 export function deadlineFor(label) {
-  return DEADLINES[label] ?? null;
+  return lookup(DEADLINES, label);
 }
 
 export function isFloating(label) {
@@ -264,7 +270,7 @@ const STATE_BY_PHASE = {
 
 /** The announced migration of a floating label, or null when there is none. */
 export function migrationFor(label) {
-  return MIGRATIONS[label] ?? null;
+  return lookup(MIGRATIONS, label);
 }
 
 /**
@@ -346,13 +352,19 @@ export function migrationStatus(label, { now = new Date(), imageOS = null } = {}
 /**
  * Should `--fail-on-migration <days>` fail on this status?
  *
- * An anomaly always fires, whatever the threshold, the same rule the retirement
- * lane uses for an already-retired label: a label serving an image the window
- * says it should have left is not a countdown, it is a fault.
+ * A label serving an image that is neither end of its window fires whatever the
+ * threshold: that is not a countdown, it is a fault, and no date makes it fine.
+ *
+ * A rollout that has not finished by the announced end does not. Both previous
+ * `latest` moves ran late, the runners keep working when they do, and a build
+ * that goes red over GitHub's schedule with no threshold that turns it off is a
+ * build people fix by deleting the check. It is still reported as an anomaly,
+ * with an `::error` annotation, because the announced date has passed.
  */
 export function migrationFails(status, days) {
   if (!status) return false;
-  if (status.anomaly) return true;
+  if (status.state === MIGRATION_STATE.UNEXPECTED) return true;
+  if (status.state === MIGRATION_STATE.STALE) return false;
   if (status.done) return false;
   if (status.phase === MIGRATION_PHASE.IN_WINDOW) return true;
   return Number.isFinite(days) && status.daysToStart !== null && status.daysToStart <= days;

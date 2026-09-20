@@ -196,6 +196,18 @@ function out(stream, line) {
 }
 
 /**
+ * A date or a zone-less time reads as UTC, which is the calendar every
+ * countdown in the output is measured in. Left to `Date.parse`, a naive time is
+ * local, so `--as-of 2026-10-19T00:00:00` lands on the 18th west of Greenwich
+ * and reports the window as a day away rather than open.
+ */
+function utcWhenNaive(raw) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return `${raw}T00:00:00Z`;
+  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw)) return `${raw.replace(' ', 'T')}Z`;
+  return raw;
+}
+
+/**
  * `--as-of`: the date every countdown is measured from. Nothing here is
  * inferred from it, so it answers "what will this say on the 19th?" without
  * pretending the run happened then.
@@ -204,7 +216,7 @@ function out(stream, line) {
 function asOf(opts, io) {
   if (opts['as-of'] === undefined) return {};
   const raw = String(opts['as-of']);
-  const at = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00Z` : raw);
+  const at = Date.parse(utcWhenNaive(raw));
   if (!Number.isFinite(at)) {
     out(io.stderr, `--as-of needs a date such as 2026-10-19 (got "${raw}")`);
     return null;

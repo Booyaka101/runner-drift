@@ -273,10 +273,16 @@ window, and on the `ImageOS` the runner exported:
 | In the window | absent, or from another job | `::warning`, which of the two this job got cannot be told |
 | After the window | the new image | `::notice`, the move is done |
 | After the window | the old image | `::error`, an anomaly rather than drift |
+| Any phase | an image from neither end | `::error`, and the build fails |
 
-The last row is the one worth having. A runner still serving Ubuntu 24.04 in
-December, when the label is supposed to mean 26.04 everywhere, is not a version
-bump you should record in the lock file.
+The last two rows are the ones worth having. A runner still serving Ubuntu 24.04
+in December, when the label is supposed to mean 26.04 everywhere, is not a
+version bump you should record in the lock file. It does not fail the build
+either: GitHub ran both previous `latest` moves late, nothing in your repo is
+broken while it does, and a red build with no threshold that turns it off is one
+people fix by deleting the check. An image that is neither end of the window is
+different. That is the label meaning something nobody announced, so it fails
+whatever the threshold says.
 
 `ImageOS` describes the runner the step is on, and that runner is serving one
 job, so it counts as evidence about `ubuntu-latest` only when that job asked for
@@ -310,9 +316,8 @@ Explained by the scheduled ubuntu-latest migration ubuntu-24.04 -> ubuntu-26.04 
 
 The step summary carries the same line, above the drift table.
 
-Exit codes and the `--fail-on` thresholds are untouched by any of this. An
-anomaly fails whatever the threshold, the same rule `--fail-on-retirement` uses
-for a label already past its date. `--json` gains a `migration` block, and the
+Exit codes and the `--fail-on` thresholds are untouched by any of this.
+`--json` gains a `migration` block, and the
 step summary gains a table (Label, Phase, Move, Window, This runner, Source).
 The explanation above has its own `explains` key next to `diffs`, which is there
 with or without the flag, and is `null` when nothing announced explains the jump.
