@@ -312,7 +312,8 @@ async function checkMigration(opts, io, now, imageOS, env, scan, lock, deps) {
     byLabel.get(site.label).push(site);
   }
   const locked = lock?.tools ? Object.keys(lock.tools) : null;
-  const tools = parseToolList(opts.tools) ?? (locked?.length ? locked : scanned.tools);
+  const asked = parseToolList(opts.tools);
+  const tools = asked?.length ? asked : (locked?.length ? locked : scanned.tools);
   const load = deps.loadManifest ?? loadManifest;
   const here = runningJob(env);
   const surveys = await Promise.all(
@@ -838,7 +839,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   }
 
   if (opts.json) {
-    const payload = { label, from: lock.imageVersion, to: imageVersion, approximate, diffs, attribution: attributionMap };
+    const payload = { label, from: lock.imageVersion, to: imageVersion, approximate, written: updateLock, diffs, attribution: attributionMap };
     payload.explains = explained?.label ?? null;
     if (retirement) payload.retirement = retirement;
     if (migration) payload.migration = { ...migration, explains: explained?.label ?? null };

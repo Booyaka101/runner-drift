@@ -116,8 +116,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   there was nothing to update yet. The README said the flag leaves the lock file
   untouched, so a lint job that asked for a report got a file to decide about.
   It now writes nothing, says so, and still reports the baseline it observed;
-  `--json` gained a `written` boolean beside `baseline`, and the step summary no
-  longer says the tools were "locked in" a file that does not exist.
+  `--json` gained a `written` boolean, on the drift payload as well as the
+  baseline one, so a reader can tell a report from a recorded run, and the step
+  summary no longer says the tools were "locked in" a file that does not exist.
 
 - A workflow whose `runs-on:` is a matrix expression had every label-shaped word
   in the file read as a runner it asks for, including the ones in comments, in

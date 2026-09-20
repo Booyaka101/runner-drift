@@ -311,6 +311,28 @@ test('the drift summary does not claim a lock update that --no-update-lock stopp
   }
 });
 
+test('--json says whether the lock was written', async () => {
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  try {
+    await writeLock(
+      {
+        label: 'ubuntu-22.04',
+        imageOS: 'ubuntu22',
+        imageVersion: '20260623.199.1',
+        tools: { 'Node.js': { versions: ['18.0.0'], source: 'probe' } },
+      },
+      lockFile,
+    );
+    const off = await guard({ tools: 'node', 'lock-file': lockFile, 'update-lock': false, json: true });
+    assert.equal(JSON.parse(off.stdout.slice(off.stdout.indexOf('{'))).written, false);
+    const on = await guard({ tools: 'node', 'lock-file': lockFile, json: true });
+    assert.equal(JSON.parse(on.stdout.slice(on.stdout.indexOf('{'))).written, true);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('a lock this version cannot read does not swallow the self-hosted skip', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');

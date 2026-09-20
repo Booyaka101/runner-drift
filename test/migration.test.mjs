@@ -721,6 +721,15 @@ test('a quoted job id is the same job GITHUB_JOB names', async () => {
   assert.deepEqual(s.notes, []);
 });
 
+test('an empty --tools list falls back like no list at all', async () => {
+  const r = await guard({ tools: ',', 'fail-on-migration': '30', json: true }, {}, BEFORE);
+  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  assert.ok(
+    j.migration.surveys[0].toolDiffs.length > 0,
+    'the workflows are still scanned for tools',
+  );
+});
+
 test('a matrix leg pinned to the new image is not the migration arriving', async () => {
   // matrix: [ubuntu-latest, ubuntu-26.04]. This runner is on 26.04, which the
   // job asks for by name, so the jump from the lock is not GitHub's doing.

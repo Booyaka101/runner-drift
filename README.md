@@ -264,6 +264,7 @@ window, and on the `ImageOS` the runner exported:
 | Phase | `ImageOS` | Reported as |
 | --- | --- | --- |
 | Before the window | — | `::notice`, the window and the countdown |
+| Before the window | the new image | `::notice`, this runner moved ahead of the announced window |
 | In the window | the old image | `::warning`, this runner has not moved yet and the diff is still ahead of you |
 | In the window | the new image | `::notice`, the migration has reached this runner |
 | In the window | absent, or from another job | `::warning`, which of the two this job got cannot be told |
