@@ -197,16 +197,21 @@ function out(stream, line) {
   stream.write(`${line}\n`);
 }
 
+const ISO_WHEN = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(Z|[+-]\d{2}:?\d{2})?)?$/;
+
 /**
- * A date or a zone-less time reads as UTC, which is the calendar every
- * countdown in the output is measured in. Left to `Date.parse`, a naive time is
- * local, so `--as-of 2026-10-19T00:00:00` lands on the 18th west of Greenwich
- * and reports the window as a day away rather than open.
+ * An ISO instant, reading a date or a zone-less time as UTC, or NaN.
+ *
+ * UTC is the calendar every countdown in the output is measured in. Left to
+ * `Date.parse`, a naive time is local, so `--as-of 2026-10-19T00:00:00` lands
+ * on the 18th west of Greenwich and reports the window as a day away rather
+ * than open. Anything `Date.parse` would read in local time is refused for the
+ * same reason, rather than silently landing a day out.
  */
-function utcWhenNaive(raw) {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return `${raw}T00:00:00Z`;
-  if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(raw)) return `${raw.replace(' ', 'T')}Z`;
-  return raw;
+function isoInstant(raw) {
+  const m = raw.match(ISO_WHEN);
+  if (!m) return NaN;
+  return Date.parse(m[2] ? `${m[1]}T${m[2]}${m[3] ?? 'Z'}` : `${m[1]}T00:00:00Z`);
 }
 
 /**
@@ -218,7 +223,7 @@ function utcWhenNaive(raw) {
 function asOf(opts, io) {
   if (opts['as-of'] === undefined) return {};
   const raw = String(opts['as-of']);
-  const at = Date.parse(utcWhenNaive(raw));
+  const at = isoInstant(raw);
   if (!Number.isFinite(at)) {
     out(io.stderr, `--as-of needs a date such as 2026-10-19 (got "${raw}")`);
     return null;

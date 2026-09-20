@@ -144,7 +144,9 @@ test("every fail-on-* input the action declares is forwarded and known to the CL
 });
 
 test('--as-of rejects anything that is not a date', async () => {
-  for (const bad of ['tomorrow', '2026-13-45', '']) {
+  // A format Date.parse reads in local time is refused rather than landing a
+  // day out, which is the whole reason the flag normalises to UTC.
+  for (const bad of ['tomorrow', '2026-13-45', '', 'Oct 19 2026', '10/19/2026', '2026-10-19T00:00:00 EST']) {
     const r = await run(['plan', '--from', 'ubuntu-latest', '--as-of', bad]);
     assert.equal(r.code, EXIT_USAGE, `"${bad}" rejected`);
     assert.match(r.stderr, /--as-of needs a date such as 2026-10-19/);

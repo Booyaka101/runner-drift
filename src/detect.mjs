@@ -241,6 +241,7 @@ function foldsOver(lines, i, indent) {
 function matrixLabels(lines) {
   const found = [];
   let scalar = null;
+  let matrixAt = null;
   for (let i = 0; i < lines.length; i++) {
     const text = stripComment(lines[i]);
     if (scalar !== null) {
@@ -259,7 +260,12 @@ function matrixLabels(lines) {
       // siblings (`env:`, `with:`) are not read as part of the script.
       const value = key[4].trim();
       const owns = key[1].length + (key[2]?.length ?? 0);
-      const prose = PROSE_KEYS.has((key[3] ?? '').trim().toLowerCase());
+      const name = (key[3] ?? '').trim().toLowerCase();
+      // Under `matrix:` every key is a dimension the job varies over, so a
+      // `matrix.name` of image labels is values, not a step title.
+      if (matrixAt !== null && key[1].length <= matrixAt) matrixAt = null;
+      const prose = matrixAt === null && PROSE_KEYS.has(name);
+      if (name === 'matrix') matrixAt = key[1].length;
       if (/^[|>]/.test(value) || (prose && (value || foldsOver(lines, i, owns)))) {
         scalar = owns;
         continue;
@@ -361,7 +367,9 @@ function jobKeys(lines) {
  *
  * `viaMatrix` marks a label read out of a matrix rather than off a `runs-on:`
  * line. Its job is right, but which leg of the matrix any one runner is serving
- * is not written anywhere in the file.
+ * is not written anywhere in the file. A `workflow_call` input default and a
+ * top-level `env:` value sit above the jobs map and so have no job of their own;
+ * they carry `jobs`, the ids whose `runs-on:` is an expression, instead.
  */
 function labelSitesWhere(walk, file, keep) {
   const { found, expression, matrix, targets, jobs } = walk;
@@ -371,7 +379,7 @@ function labelSitesWhere(walk, file, keep) {
   // `workflow_call` input default and a top-level `env:` value both live above
   // it. The jobs it can serve are the ones whose `runs-on:` is an expression.
   const viaExpression = expression
-    ? [...new Set(targets.filter((t) => t.expression).map((t) => jobOf(t.line)))]
+    ? [...new Set(targets.filter((t) => t.expression).map((t) => jobOf(t.line)))].filter(Boolean)
     : [];
 
   const seen = new Set();
@@ -379,15 +387,16 @@ function labelSitesWhere(walk, file, keep) {
   const all = expression ? [...found, ...matrix.map((m) => ({ ...m, viaMatrix: true }))] : found;
   for (const { label, line, col, viaMatrix } of all) {
     if (!keep(label)) continue;
-    const own = jobOf(line);
-    const owners = viaMatrix && own === null && viaExpression.length ? viaExpression : [own];
-    for (const job of owners) {
-      const key = `${label}@${line}:${col}@${job}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const site = { label, file, line, col, job };
-      sites.push(viaMatrix ? { ...site, viaMatrix } : site);
-    }
+    const key = `${label}@${line}:${col}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const job = jobOf(line);
+    const site = { label, file, line, col, job };
+    if (viaMatrix) site.viaMatrix = true;
+    // One annotation per position, so the jobs a label off the map can serve
+    // travel with it rather than becoming a site each.
+    if (viaMatrix && job === null && viaExpression.length) site.jobs = viaExpression;
+    sites.push(site);
   }
   return sites;
 }
@@ -480,7 +489,8 @@ export function labelOwnership({ label, observed = null, sites = [], others = []
 
 /** Is this `runs-on:` site the one the running job was scheduled from? */
 export function siteInJob(site, here) {
-  if (!here || !site?.job || site.job !== here.job) return false;
+  const owns = site?.job ? site.job === here?.job : Boolean(site?.jobs?.includes(here?.job));
+  if (!here || !owns) return false;
   if (!here.file || !site.file) return true;
   return path.basename(site.file).toLowerCase() === here.file.toLowerCase();
 }

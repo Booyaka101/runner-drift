@@ -205,6 +205,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   explanation, exactly as it does when there is no job id at all, and says so
   rather than reporting the label as migrated.
 
+- A matrix axis called `name`, `run` or `if` was read as prose and dropped, so a
+  `runs-on: ${{ matrix.name }}` over image labels found nothing. Under `matrix:`
+  every key is a dimension the job varies over, and the prose keys only hold
+  prose outside it.
+
 - A label written under a key named `name`, `run` or `if` was dropped even when
   that key held a map rather than prose. 1.4.0 taught the matrix fallback to skip
   the keys that hold shell and titles, and an empty one swallowed everything
@@ -212,6 +217,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   with it and both `--fail-on-retirement` and `--fail-on-migration` went silent
   for that file. An empty prose key now only owns a body that is not itself a
   map.
+
+- `--as-of` accepted a date `Date.parse` reads in local time, which is the
+  off-by-a-day the flag normalises to UTC to avoid: `--as-of "Oct 19 2026"`
+  measured from the 18th east of Greenwich. It takes ISO dates and date-times
+  now, with or without a zone, and refuses the rest.
 
 - The migration step-summary table badged the phase, not the outcome, so a runner
   still serving the old image after the window closed showed `✅ settled` in the

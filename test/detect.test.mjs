@@ -216,8 +216,8 @@ test('an expression runs-on resolves a workflow_call input default', () => {
   ].join('\n');
   assert.deepEqual(extractLabels(y), ['ubuntu-22.04']);
   assert.deepEqual(
-    extractLabelSites(y).map((s) => [s.label, s.line, s.job]),
-    [['ubuntu-22.04', 5, 'a']],
+    extractLabelSites(y).map((s) => [s.label, s.line, s.job, s.jobs]),
+    [['ubuntu-22.04', 5, null, ['a']]],
     'the default sits above the jobs map, but it is job a that runs on it',
   );
 });
@@ -235,12 +235,9 @@ test('a label an expression reaches from top-level env still belongs to the jobs
     '    runs-on: ${{ env.RUNNER }}',
   ].join('\n');
   assert.deepEqual(
-    extractFloatingSites(y).map((s) => [s.label, s.line, s.job]),
-    [
-      ['ubuntu-latest', 2, 'a'],
-      ['ubuntu-latest', 2, 'c'],
-    ],
-    'both expression jobs can be the one this label serves; the pinned job cannot',
+    extractFloatingSites(y).map((s) => [s.label, s.line, s.jobs]),
+    [['ubuntu-latest', 2, ['a', 'c']]],
+    'one annotation, naming both jobs it can serve; the pinned job is not one',
   );
 });
 
@@ -378,6 +375,52 @@ test('a label written in a step name or a condition is not a runner', () => {
   assert.deepEqual(extractLabels(y), ['ubuntu-24.04']);
 });
 
+test('a matrix dimension named after a prose key is still values', () => {
+  // `name` is a step title under `steps:` and a matrix axis under `matrix:`.
+  const y = [
+    'jobs:',
+    '  a:',
+    '    strategy:',
+    '      matrix:',
+    '        name: [ubuntu-22.04, macos-14]',
+    '    runs-on: ${{ matrix.name }}',
+    '    steps:',
+    '      - name: build on ubuntu-latest',
+    '        run: make',
+  ].join(String.fromCharCode(10));
+  assert.deepEqual(extractLabels(y).sort(), ['macos-14', 'ubuntu-22.04']);
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => [s.label, s.line, s.job]),
+    [
+      ['ubuntu-22.04', 5, 'a'],
+      ['macos-14', 5, 'a'],
+    ],
+  );
+  assert.deepEqual(extractFloatingSites(y), [], 'the step title is still prose');
+});
+
+test('one label line is one site, however many jobs the expression serves', () => {
+  // Three jobs sharing an input default used to mean three identical
+  // annotations on the same line.
+  const y = [
+    'on:',
+    '  workflow_call:',
+    '    inputs:',
+    '      runner:',
+    '        default: ubuntu-latest',
+    'jobs:',
+    '  a:',
+    '    runs-on: ${{ inputs.runner }}',
+    '  b:',
+    '    runs-on: ${{ inputs.runner }}',
+    '  c:',
+    '    runs-on: ${{ inputs.runner }}',
+  ].join(String.fromCharCode(10));
+  const sites = extractFloatingSites(y);
+  assert.equal(sites.length, 1);
+  assert.deepEqual(sites[0].jobs, ['a', 'b', 'c']);
+});
+
 test('an empty prose key that holds a map is read, not skipped', () => {
   // `name:` is a prose key, but `inputs.name` is an input whose default a
   // `runs-on:` expression resolves to.
@@ -393,8 +436,8 @@ test('an empty prose key that holds a map is read, not skipped', () => {
   ].join('\n');
   assert.deepEqual(extractLabels(y), ['ubuntu-22.04']);
   assert.deepEqual(
-    extractLabelSites(y).map((s) => [s.label, s.line, s.job]),
-    [['ubuntu-22.04', 5, 'a']],
+    extractLabelSites(y).map((s) => [s.label, s.line, s.jobs]),
+    [['ubuntu-22.04', 5, ['a']]],
   );
 });
 

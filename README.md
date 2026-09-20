@@ -605,7 +605,7 @@ summary table, and sets a `will-fail-count` output.
 | `--json` | all | off | Machine-readable output |
 | `--no-summary` | `guard`, `runners`, `actions` | on | Skip the `$GITHUB_STEP_SUMMARY` write |
 | `--no-update-lock` | `guard` | on | Report drift but leave the lock file untouched |
-| `--as-of <date>` | `guard`, `plan`, `runners`, `actions` | today | Measure every countdown from this date instead. Nothing else is faked, so it answers "what will this say on the 19th?" |
+| `--as-of <date>` | `guard`, `plan`, `runners`, `actions` | today | Measure every countdown from this date instead. Nothing else is faked, so it answers "what will this say on the 19th?" ISO only (`2026-10-19`, `2026-10-19T09:00`), read as UTC when no zone is given. |
 
 Exit codes: `0` success (including "drift found" without `--fail-on`, a refused
 permission, and an empty fleet), `1` drift at or above the `--fail-on` threshold,
