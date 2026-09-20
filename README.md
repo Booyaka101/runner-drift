@@ -26,7 +26,7 @@ brownouts starting 2027-03-23](https://github.com/actions/runner-images/issues/1
 $ npx runner-drift plan --from ubuntu-22.04 --to ubuntu-24.04
 ubuntu-22.04 -> ubuntu-24.04 (images 20260720.234.2 -> 20260720.247.2)
 ubuntu-22.04 is fully unsupported on 2027-04-17; brownouts begin 2027-03-23 (source: actions/runner-images#14254)
-255 days left (230 until the first brownout) — deprecation began 2026-09-17; see https://github.com/actions/runner-images/issues/14254
+255 days left (230 days until the first brownout) — deprecation began 2026-09-17; see https://github.com/actions/runner-images/issues/14254
 brownout windows (14:00-00:00 UTC): 2027-03-23, 2027-03-30, 2027-04-06, 2027-04-13
 announced migration targets: ubuntu-24.04, ubuntu-26.04, ubuntu-latest
 

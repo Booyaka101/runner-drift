@@ -74,7 +74,7 @@ export function deadlineLines(label, now = new Date()) {
     left === null
       ? null
       : left > 0
-        ? `${plural(left, 'day')} left${untilBrownout !== null && untilBrownout > 0 ? ` (${untilBrownout} until the first brownout)` : ''}`
+        ? `${plural(left, 'day')} left${untilBrownout !== null && untilBrownout > 0 ? ` (${plural(untilBrownout, 'day')} until the first brownout)` : ''}`
         : `retired ${plural(Math.abs(left), 'day')} ago`;
   if (countdownLine) {
     lines.push(`${countdownLine} — deprecation began ${dl.deprecationStart}; see ${dl.source}`);
@@ -469,9 +469,9 @@ export function migrationReport(surveys) {
 
 /**
  * `::notice`/`::warning`/`::error` per `runs-on:` site, so the message lands on
- * the line that owns the floating label. A survey with no site on disk (guard
- * reading the label from ImageOS with no workflow checkout) still gets one
- * step-level annotation rather than none.
+ * the line that owns the floating label. A survey built without a scan behind
+ * it has no line to point at and gets one step-level annotation instead; in
+ * `guard` that cannot happen, since the scan is what finds the label at all.
  */
 export function migrationAnnotations(surveys) {
   return surveys.flatMap((s) => {
