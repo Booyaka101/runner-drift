@@ -600,6 +600,30 @@ test('a run from a file the scan never saw cannot claim a shared job id', async 
   assert.match(s.notes.join(' '), /More than one workflow has a job called "build"/);
 });
 
+test('a runs-on taken from an input default still belongs to its job', async () => {
+  // The label resolves above the jobs map, so the site's own line carries no job
+  // id. The job whose runs-on is that expression is the one it serves.
+  const r = await guard(
+    {
+      tools: 'node',
+      'fail-on-migration': '30',
+      json: true,
+      workflows: path.join(FIXTURES, 'workflows-input-default'),
+    },
+    {
+      ImageOS: 'ubuntu26',
+      GITHUB_JOB: 'build',
+      GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/build.yml@refs/heads/main',
+    },
+    DURING,
+  );
+  const s = jsonOf(r.stdout).migration.surveys[0];
+  assert.equal(s.observed, 'ubuntu-26.04');
+  assert.equal(s.state, MIGRATION_STATE.MIGRATED);
+  assert.deepEqual(s.notes, [], 'the job did run on ubuntu-latest');
+  assert.equal(r.code, EXIT_OK, 'a migrated runner does not red the build');
+});
+
 test('the same shared job id withholds the drift explanation', async () => {
   const r = await guardAcrossTheMove(
     {

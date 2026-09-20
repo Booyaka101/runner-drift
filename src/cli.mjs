@@ -37,6 +37,7 @@ import {
   stepSummaryMarkdown,
   annotations,
   notice,
+  plural,
   retirementFindings,
   retirementAnnotations,
   retirementSummaryMarkdown,
@@ -338,8 +339,8 @@ function reportRetirement(io, { days, findings }) {
     (f) => f.status.label,
     ({ status: s }) =>
       s.retired
-        ? `runner-drift: ${s.label} has been fully unsupported since ${s.fullyUnsupported} (retired ${Math.abs(s.daysToUnsupported)} days ago) and --fail-on-retirement ${days} is set.`
-        : `runner-drift: ${s.label} is fully unsupported on ${s.fullyUnsupported} (${s.daysToUnsupported} days) and --fail-on-retirement ${days} is set.`,
+        ? `runner-drift: ${s.label} has been fully unsupported since ${s.fullyUnsupported} (retired ${plural(Math.abs(s.daysToUnsupported), 'day')} ago) and --fail-on-retirement ${days} is set.`
+        : `runner-drift: ${s.label} is fully unsupported on ${s.fullyUnsupported} (${plural(s.daysToUnsupported, 'day')}) and --fail-on-retirement ${days} is set.`,
   );
 }
 
@@ -448,12 +449,12 @@ function reportDeprecation(io, survey) {
         : '';
       if (g.runtime) {
         return g.runtime.past
-          ? `runner-drift: ${fleet} lost runtime support on ${g.runtime.date} (${Math.abs(g.runtime.days)} days ago) — jobs are no longer queued to them.`
-          : `runner-drift: ${fleet} lose runtime support on ${g.runtime.date} (${g.runtime.days} days)${because}.`;
+          ? `runner-drift: ${fleet} lost runtime support on ${g.runtime.date} (${plural(Math.abs(g.runtime.days), 'day')} ago) — jobs are no longer queued to them.`
+          : `runner-drift: ${fleet} lose runtime support on ${g.runtime.date} (${plural(g.runtime.days, 'day')})${because}.`;
       }
       return g.registration.past
-        ? `runner-drift: ${fleet} lost registration on ${g.registration.date} (${Math.abs(g.registration.days)} days ago) — they cannot reregister.`
-        : `runner-drift: ${fleet} lose registration on ${g.registration.date} (${g.registration.days} days)${because}.`;
+        ? `runner-drift: ${fleet} lost registration on ${g.registration.date} (${plural(Math.abs(g.registration.days), 'day')} ago) — they cannot reregister.`
+        : `runner-drift: ${fleet} lose registration on ${g.registration.date} (${plural(g.registration.days, 'day')})${because}.`;
     },
   );
 }

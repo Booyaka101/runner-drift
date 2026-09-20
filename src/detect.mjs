@@ -346,17 +346,30 @@ function jobKeys(lines) {
  * is not written anywhere in the file.
  */
 function labelSitesWhere(walk, file, keep) {
-  const { found, expression, matrix, jobs } = walk;
+  const { found, expression, matrix, targets, jobs } = walk;
+  const jobOf = (line) => jobs[line - 1] ?? null;
+
+  // A label an expression resolves to need not sit in the jobs map at all: a
+  // `workflow_call` input default and a top-level `env:` value both live above
+  // it. The jobs it can serve are the ones whose `runs-on:` is an expression.
+  const viaExpression = expression
+    ? [...new Set(targets.filter((t) => t.expression).map((t) => jobOf(t.line)))]
+    : [];
+
   const seen = new Set();
   const sites = [];
   const all = expression ? [...found, ...matrix.map((m) => ({ ...m, viaMatrix: true }))] : found;
   for (const { label, line, col, viaMatrix } of all) {
     if (!keep(label)) continue;
-    const key = `${label}@${line}:${col}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const site = { label, file, line, col, job: jobs[line - 1] ?? null };
-    sites.push(viaMatrix ? { ...site, viaMatrix } : site);
+    const own = jobOf(line);
+    const owners = viaMatrix && own === null && viaExpression.length ? viaExpression : [own];
+    for (const job of owners) {
+      const key = `${label}@${line}:${col}@${job}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const site = { label, file, line, col, job };
+      sites.push(viaMatrix ? { ...site, viaMatrix } : site);
+    }
   }
   return sites;
 }

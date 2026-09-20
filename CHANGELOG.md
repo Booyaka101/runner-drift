@@ -205,6 +205,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   explanation, exactly as it does when there is no job id at all, and says so
   rather than reporting the label as migrated.
 
+- A `runs-on:` taken from an expression resolved outside the jobs map lost its
+  job. A `workflow_call` input default and a top-level `env:` value both sit
+  above `jobs:`, so the line the label was read from carried no job id, and with
+  `GITHUB_JOB` set the runner's image was discarded with the note that the job
+  had not run on the floating label. On a reusable build workflow that had
+  already migrated, `--fail-on-migration` reddened the build for the whole
+  rollout month, and only when run inside a job, which read as flakiness. Such a
+  label now belongs to every job whose `runs-on:` is an expression.
+
 - Mid-migration, the drift lane attributed the change to the wrong image's
   history. A lock recorded on `ubuntu-24.04` and a runner on `ubuntu-26.04` are
   two operating systems, but guard looked the locked image version up in the

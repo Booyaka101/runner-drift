@@ -31,7 +31,7 @@ import {
 
 export { daysUntil };
 
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+export const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /** `(82 days)` / `(60 days ago)` — the countdown suffix both lanes print. */
 export function countdown(days) {
@@ -317,7 +317,7 @@ export function retirementFindings(labelSites, { now = new Date(), days } = {}) 
 function retirementMessage(s) {
   const migrate = `Migrate to ${s.migrateTo.join(', ')}.`;
   if (s.retired) {
-    return `${s.label} retired ${Math.abs(s.daysToUnsupported)} days ago — fully unsupported since ${s.fullyUnsupported}. ${migrate} See ${s.source}`;
+    return `${s.label} retired ${plural(Math.abs(s.daysToUnsupported), 'day')} ago — fully unsupported since ${s.fullyUnsupported}. ${migrate} See ${s.source}`;
   }
   const brownout = s.nextBrownout
     ? `; next brownout ${dateWithCountdown(s.nextBrownout, s.daysToBrownout)}`
@@ -333,9 +333,9 @@ export function retirementAnnotations(findings) {
   return findings.map((f) => {
     const s = f.status;
     let kind = 'error';
-    let title = `runner-drift: ${s.label} retires in ${s.daysToUnsupported} days`;
+    let title = `runner-drift: ${s.label} retires in ${plural(s.daysToUnsupported, 'day')}`;
     if (s.retired) {
-      title = `runner-drift: ${s.label} retired ${Math.abs(s.daysToUnsupported)} days ago`;
+      title = `runner-drift: ${s.label} retired ${plural(Math.abs(s.daysToUnsupported), 'day')} ago`;
     } else if (f.trigger === 'brownout') {
       kind = 'warning';
       title = `runner-drift: ${s.label} deprecation`;
@@ -353,7 +353,7 @@ export function retirementSummaryMarkdown(findings) {
       `\`${annotationPath(f.file)}:${f.line}\``,
       s.nextBrownout ? dateWithCountdown(s.nextBrownout, s.daysToBrownout) : '—',
       s.retired
-        ? `${s.fullyUnsupported} (retired ${Math.abs(s.daysToUnsupported)} days ago)`
+        ? `${s.fullyUnsupported} (retired ${plural(Math.abs(s.daysToUnsupported), 'day')} ago)`
         : dateWithCountdown(s.fullyUnsupported, s.daysToUnsupported),
       s.migrateTo.map((m) => `\`${m}\``).join(', '),
       `[${s.sourceRef}](${s.source})`,
@@ -788,7 +788,7 @@ export function runnersSummaryMarkdown(survey) {
     return `${lines.join('\n')}\n`;
   }
   lines.push(
-    `\`${survey.scope.name}\` — ${plural(survey.surveyedCount, 'runner')} on ${plural(survey.groups.length, 'version')}, window ${survey.windowDays} days.`,
+    `\`${survey.scope.name}\` — ${plural(survey.surveyedCount, 'runner')} on ${plural(survey.groups.length, 'version')}, window ${plural(survey.windowDays, 'day')}.`,
   );
   for (const c of caveats) lines.push('', c);
   lines.push('');

@@ -216,8 +216,31 @@ test('an expression runs-on resolves a workflow_call input default', () => {
   ].join('\n');
   assert.deepEqual(extractLabels(y), ['ubuntu-22.04']);
   assert.deepEqual(
-    extractLabelSites(y).map((s) => [s.label, s.line]),
-    [['ubuntu-22.04', 5]],
+    extractLabelSites(y).map((s) => [s.label, s.line, s.job]),
+    [['ubuntu-22.04', 5, 'a']],
+    'the default sits above the jobs map, but it is job a that runs on it',
+  );
+});
+
+test('a label an expression reaches from top-level env still belongs to the jobs', () => {
+  const y = [
+    'env:',
+    '  RUNNER: ubuntu-latest',
+    'jobs:',
+    '  a:',
+    '    runs-on: ${{ env.RUNNER }}',
+    '  b:',
+    '    runs-on: ubuntu-22.04',
+    '  c:',
+    '    runs-on: ${{ env.RUNNER }}',
+  ].join('\n');
+  assert.deepEqual(
+    extractFloatingSites(y).map((s) => [s.label, s.line, s.job]),
+    [
+      ['ubuntu-latest', 2, 'a'],
+      ['ubuntu-latest', 2, 'c'],
+    ],
+    'both expression jobs can be the one this label serves; the pinned job cannot',
   );
 });
 
