@@ -222,14 +222,19 @@ function matrixLabels(lines) {
       if (!text.trim() || indentOf(text) > scalar) continue;
       scalar = null;
     }
-    const key = text.match(/^([ \t]*)(?:-[ \t]+)?([^:\r\n]*):([^\r\n]*)$/);
+    // The key cannot start with a space: nothing mandatory separates it from the
+    // indent, and both matching whitespace is how a line of spaces with no colon
+    // went quadratic in 1.2.0.
+    const key = text.match(/^([ \t]*)(-[ \t]+)?([^:\s][^:\r\n]*)?:([^\r\n]*)$/);
     if (key) {
       // `run: |` and friends: the body below is shell or prose, not YAML values.
-      if (/^[|>]/.test(key[3].trim())) {
-        scalar = key[1].length;
+      // A dashed key owns the column the dash sits in, so the step's own
+      // siblings (`env:`, `with:`) are not read as part of the script.
+      if (/^[|>]/.test(key[4].trim())) {
+        scalar = key[1].length + (key[2]?.length ?? 0);
         continue;
       }
-      if (PROSE_KEYS.has(key[2].trim().toLowerCase())) continue;
+      if (PROSE_KEYS.has((key[3] ?? '').trim().toLowerCase())) continue;
     }
     for (const tok of text.matchAll(/[A-Za-z][A-Za-z0-9.-]*/g)) {
       if (LABEL_SHAPE.test(tok[0])) {

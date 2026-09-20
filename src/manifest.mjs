@@ -208,9 +208,10 @@ export function parseManifest(markdown, label = null) {
       continue;
     }
 
-    // `[^:\r\n]+` up to the colon and no `$` at the end: the key cannot run past
-    // its own delimiter and there is no failure condition to backtrack over.
-    const headerM = line.match(/^[ \t]*-[ \t]+([^:\r\n]+):[ \t]*([^\r\n]+)/);
+    // The key starts with a non-space, so the indent run and the key cannot both
+    // claim the same spaces: without that, a dashed bullet whose colon never
+    // arrives makes the engine try every split of a long whitespace run.
+    const headerM = line.match(/^[ \t]*-[ \t]+([^:\s][^:\r\n]*):[ \t]*([^\r\n]+)/);
     if (headerM) {
       const key = headerM[1].trim().toLowerCase();
       const field = Object.hasOwn(HEADER_FIELDS, key) ? HEADER_FIELDS[key] : null;

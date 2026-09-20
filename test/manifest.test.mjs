@@ -118,6 +118,7 @@ test('parseManifest stays linear on pathological input', () => {
     ['a parenthesis that is never closed', `- Tool 1.0 (${pad}x`],
     ['spaces then an unclosed (default', `- Tool 1.0${pad}(default`],
     ['a bullet body with no version', `- ${'a'.repeat(240_000)}:${pad}`],
+    ['a dashed bullet whose colon never arrives', `- ${pad}x`],
     ['an OS Version line with a stray CR', `- OS Version:${pad}${CR}`],
     ['an Image Version line with a stray CR', `- Image Version:${pad}${CR}`],
     ['a table cell full of open parens', `| Name | V |\n|---|---|\n| a${'('.repeat(60_000)} | 1.0 |`],

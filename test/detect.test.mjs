@@ -249,6 +249,26 @@ test('labelSites: a matrix does not make every mention of a label a site', () =>
   );
 });
 
+test('a dashed run: block does not swallow the step keys under it', () => {
+  const y = [
+    'jobs:',
+    '  a:',
+    '    runs-on: ${{ matrix.os }}',
+    '    strategy:',
+    '      matrix:',
+    '        os: [ubuntu-22.04]',
+    '    steps:',
+    '      - run: |',
+    '          echo ubuntu-20.04',
+    '        env:',
+    '          FALLBACK: ubuntu-18.04',
+  ].join('\n');
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => s.label),
+    ['ubuntu-22.04', 'ubuntu-18.04'],
+  );
+});
+
 test('a quoted job id is recorded without its quotes', () => {
   const y = [
     'jobs:',
@@ -336,6 +356,8 @@ test('the line scanners stay linear on pathological input', () => {
     ['extractLabels', () => extractLabels(`runs-on:${pad}${CR}x`)],
     ['extractLabelSites', () => extractLabelSites(`runs-on:${pad}${CR}x`)],
     ['commandsInScript after sudo', () => commandsInScript(`sudo${pad}x`)],
+    ['a matrix scan over an indent with no colon', () => extractLabelSites(`runs-on: \${{ matrix.os }}\n${pad}x`)],
+    ['a matrix scan over a dashed indent', () => extractLabelSites(`runs-on: \${{ matrix.os }}\n${pad}-${pad}x`)],
   ];
 
   for (const [label, fn] of cases) {
