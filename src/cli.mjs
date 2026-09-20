@@ -25,7 +25,7 @@ import {
 import { loadManifest, resolveManifestVersions } from './manifest.mjs';
 import { imageDiffs, surveyMigration } from './migration.mjs';
 import { attribute, commitWindow, attributeChanges, listManifestCommits, manifestAtSha } from './history.mjs';
-import { detect, runningJob, siteInJob, SELF_HOSTED } from './detect.mjs';
+import { detect, jobMatcher, runningJob, SELF_HOSTED } from './detect.mjs';
 import { canonicalTool, knownTools, MANIFEST_CANDIDATES } from './tools.mjs';
 import { probeTool, isProbeable } from './probe.mjs';
 import { diffTool, shouldFail, maxSeverity } from './diff.mjs';
@@ -233,11 +233,22 @@ function summarise(io, items, keyOf, lineOf) {
 }
 
 /**
+ * One workflow scan per `guard` run. Both lint lanes, the tool fallback, the
+ * label fallback and the drift explanation want the same directory, and reading
+ * it five times to get the same answer is five times the IO for nothing.
+ */
+function scanner(opts) {
+  const dir = opts.workflows ?? path.join('.github', 'workflows');
+  let pending = null;
+  return () => (pending ??= detect(dir));
+}
+
+/**
  * The workflow scan the two lint lanes start from, or null when there is no
  * workflow directory — which is a notice on both streams, not an error.
  */
-async function scanForLane(opts, io, nothingToCheck) {
-  const scanned = await detect(opts.workflows ?? path.join('.github', 'workflows'));
+async function scanForLane(scan, io, nothingToCheck) {
+  const scanned = await scan();
   if (!scanned.missing) return scanned;
   const msg = `No workflow directory at ${scanned.dir} — ${nothingToCheck}.`;
   out(io.stdout, notice(msg));
@@ -250,10 +261,10 @@ async function scanForLane(opts, io, nothingToCheck) {
  * the window. Reads the workflow files alone, so it works in a lint job with no
  * lock file and no hosted runner. Returns null on a bad value, already reported.
  */
-async function checkRetirement(opts, io, now) {
+async function checkRetirement(opts, io, now, scan) {
   const days = wholeDays(opts['fail-on-retirement'], '--fail-on-retirement', io);
   if (days === null) return null;
-  const scanned = await scanForLane(opts, io, 'no pinned labels to check for retirement');
+  const scanned = await scanForLane(scan, io, 'no pinned labels to check for retirement');
   if (!scanned) return { days, findings: [] };
 
   const findings = retirementFindings(scanned.labelSites, { now, days });
@@ -283,10 +294,10 @@ function reportRetirement(io, { days, findings }) {
  * images it names. Opt-in like the retirement gate, and like it, useful in a
  * plain lint job with no runner and no lock file.
  */
-async function checkMigration(opts, io, now, imageOS, env, deps) {
+async function checkMigration(opts, io, now, imageOS, env, scan, deps) {
   const days = wholeDays(opts['fail-on-migration'], '--fail-on-migration', io);
   if (days === null) return null;
-  const scanned = await scanForLane(opts, io, 'no floating labels to check for migration');
+  const scanned = await scanForLane(scan, io, 'no floating labels to check for migration');
   if (!scanned) return { days, surveys: [] };
 
   const byLabel = new Map();
@@ -300,7 +311,7 @@ async function checkMigration(opts, io, now, imageOS, env, deps) {
   const here = runningJob(env);
   const surveys = await Promise.all(
     [...byLabel].map(([label, sites]) =>
-      surveyMigration({ label, now, imageOS, tools, sites, here, load }),
+      surveyMigration({ label, now, imageOS, tools, sites, others: scanned.labelSites, here, load }),
     ),
   );
 
@@ -323,7 +334,7 @@ async function checkMigration(opts, io, now, imageOS, env, deps) {
  * The scan only happens for a jump the table already recognises, which is rare,
  * so the common path still reads no workflow files it did not need.
  */
-async function explainDrift({ migration, lock, label, opts, env }) {
+async function explainDrift({ migration, lock, label, scan, env }) {
   const survey = migration?.surveys.find(
     (s) => s.done && s.observed === s.to && lock.label === s.from && label === s.to,
   );
@@ -333,10 +344,10 @@ async function explainDrift({ migration, lock, label, opts, env }) {
   if (!m) return null;
   const sites = migration
     ? migration.surveys.flatMap((s) => s.sites)
-    : (await detect(opts.workflows ?? path.join('.github', 'workflows'))).floatingSites;
+    : (await scan()).floatingSites;
   const ours = sites.filter((site) => site.label === m.label);
   const here = runningJob(env);
-  const used = here ? ours.some((site) => siteInJob(site, here)) : ours.length > 0;
+  const used = here ? ours.some(jobMatcher(here, sites)) : ours.length > 0;
   return used ? m : null;
 }
 
@@ -541,6 +552,7 @@ async function checkOwnRunner(opts, io, env, deps, window) {
 
 export async function runGuard(opts, io = process, env = process.env, deps = {}) {
   const lockFile = opts['lock-file'] ?? DEFAULT_LOCK_FILE;
+  const scan = scanner(opts);
   // Writing the lock is the default; `main` resolves --no-update-lock into it,
   // but runGuard is exported and a caller building options by hand has neither.
   const updateLock = opts['update-lock'] !== false;
@@ -559,7 +571,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   // so a lint job on any runner gets the deadline warning.
   let retirement = null;
   if (opts['fail-on-retirement'] !== undefined) {
-    retirement = await checkRetirement(opts, io, deps.now ?? new Date());
+    retirement = await checkRetirement(opts, io, deps.now ?? new Date(), scan);
     if (!retirement) return EXIT_USAGE;
   }
   const retiring = retirement?.findings.length ? retirement : null;
@@ -572,7 +584,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   // two images right now" and "this job ran on the new one".
   let migration = null;
   if (opts['fail-on-migration'] !== undefined) {
-    migration = await checkMigration(opts, io, deps.now ?? new Date(), imageOS, env, deps);
+    migration = await checkMigration(opts, io, deps.now ?? new Date(), imageOS, env, scan, deps);
     if (!migration) return EXIT_USAGE;
     if (!opts.json && migration.surveys.length) {
       out(io.stdout, migrationReport(migration.surveys));
@@ -622,7 +634,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   let label = (imageOS && IMAGE_OS_TO_LABEL[imageOS.toLowerCase()]) || lock?.label || null;
 
   if (!label) {
-    const detected = await detect(opts.workflows ?? path.join('.github', 'workflows'));
+    const detected = await scan();
     label = concreteLabels(detected.labels)[0] ?? null;
   }
   if (!label) {
@@ -640,7 +652,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     tools = Object.keys(lock.tools);
   }
   if (!tools?.length) {
-    const detected = await detect(opts.workflows ?? path.join('.github', 'workflows'));
+    const detected = await scan();
     tools = detected.tools;
   }
   if (!tools.length) {
@@ -784,7 +796,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     }
   }
 
-  const explained = await explainDrift({ migration, lock, label, opts, env });
+  const explained = await explainDrift({ migration, lock, label, scan, env });
 
   const summary = stepSummaryMarkdown({
     label,

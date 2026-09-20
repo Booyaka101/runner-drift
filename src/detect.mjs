@@ -194,40 +194,42 @@ function scanRunsOn(lines) {
 }
 
 /**
- * `runs-on: ${{ matrix.os }}` -> the label-shaped scalars in the file's
- * `matrix:` blocks.
+ * An expression `runs-on:` -> the label-shaped scalars elsewhere in the file.
  *
- * Scoped to those blocks, and comments dropped: a label named in a comment or a
- * `run:` line is not a runner this workflow asks for, and an annotation has to
- * land on a line someone can act on.
+ * Which one a given runner serves is not decidable from the file, so this is
+ * deliberately broad: `${{ matrix.os }}`, `${{ inputs.runner }}` and
+ * `${{ env.RUNNER }}` all resolve to values written somewhere above.
+ *
+ * Broad, but not everything. Comments, block scalars and the keys that hold
+ * prose or shell rather than a value (`run:`, `name:`, `if:`) are skipped: a
+ * label named there is not a runner the workflow asks for, and an annotation
+ * has to land on a line someone can act on.
  */
+const PROSE_KEYS = new Set(['run', 'name', 'if']);
+
 function matrixLabels(lines) {
   const found = [];
-  const collect = (text, i) => {
+  let scalar = null;
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i].replace(/(^|[ \t])#[^\r\n]*$/, '$1');
+    if (scalar !== null) {
+      if (!text.trim() || indentOf(text) > scalar) continue;
+      scalar = null;
+    }
+    const key = text.match(/^([ \t]*)(?:-[ \t]+)?([^:\r\n]*):([^\r\n]*)$/);
+    if (key) {
+      // `run: |` and friends: the body below is shell or prose, not YAML values.
+      if (/^[|>]/.test(key[3].trim())) {
+        scalar = key[1].length;
+        continue;
+      }
+      if (PROSE_KEYS.has(key[2].trim().toLowerCase())) continue;
+    }
     for (const tok of text.matchAll(/[A-Za-z][A-Za-z0-9.-]*/g)) {
       if (LABEL_SHAPE.test(tok[0])) {
         found.push({ label: tok[0].toLowerCase(), line: i + 1, col: tok.index + 1 });
       }
     }
-  };
-  let block = null;
-  for (let i = 0; i < lines.length; i++) {
-    const text = lines[i].replace(/(^|[ \t])#[^\r\n]*$/, '$1');
-    const open = text.match(/^([ \t]*)matrix:/);
-    if (open) {
-      // A flow mapping puts the labels on the `matrix:` line itself; the block
-      // stays open either way, since the mapping may run onto further lines.
-      block = open[1].length;
-      collect(text, i);
-      continue;
-    }
-    if (block === null) continue;
-    if (!text.trim()) continue;
-    if (indentOf(text) <= block) {
-      block = null;
-      continue;
-    }
-    collect(text, i);
   }
   return found;
 }
@@ -266,7 +268,8 @@ function jobKeys(lines) {
       const indent = m[1].length;
       const key = m[2].trim();
       if (jobsIndent === null) {
-        if (key === 'jobs') jobsIndent = indent;
+        // Top level only: `on.workflow_dispatch.inputs.jobs` is not the map.
+        if (key === 'jobs' && indent === 0) jobsIndent = indent;
       } else if (indent <= jobsIndent) {
         current = null;
       } else if (jobIndent === null || indent === jobIndent) {
@@ -330,6 +333,26 @@ export function runningJob(env = process.env) {
   if (!job) return null;
   const ref = env.GITHUB_WORKFLOW_REF || '';
   return { job, file: ref ? path.basename(ref.split('@')[0]) : null };
+}
+
+/**
+ * A predicate for "this site is one the running job was scheduled from", over
+ * the sites a scan actually produced.
+ *
+ * The file name is dropped from the comparison when none of the scanned files
+ * is the one this run came from: a job inside a reusable workflow reports the
+ * caller's file in `GITHUB_WORKFLOW_REF`, and a scan pointed at a copy of the
+ * directory need not match it either. The job id still has to agree.
+ */
+export function jobMatcher(here, sites = []) {
+  if (!here) return () => false;
+  const known =
+    here.file
+    && sites.some(
+      (s) => s.file && path.basename(s.file).toLowerCase() === here.file.toLowerCase(),
+    );
+  const at = known ? here : { ...here, file: null };
+  return (site) => siteInJob(site, at);
 }
 
 /** Is this `runs-on:` site the one the running job was scheduled from? */

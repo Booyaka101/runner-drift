@@ -14,7 +14,7 @@ import {
 } from '../src/labels.mjs';
 import { attributeImageOS, imageDiffs, surveyMigration } from '../src/migration.mjs';
 import { migrationAnnotations, migrationLines, migrationSummaryMarkdown } from '../src/report.mjs';
-import { detect, extractFloatingSites } from '../src/detect.mjs';
+import { detect, extractFloatingSites, extractLabelSites, jobMatcher } from '../src/detect.mjs';
 import { writeLock } from '../src/lock.mjs';
 import { runGuard, runPlan, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
 import { captureIO, fixtureLoader, FIXTURES } from './helpers.mjs';
@@ -572,6 +572,39 @@ test('mid-window, the job on the floating label still reads as migrated', async 
   const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
   assert.equal(j.migration.surveys[0].state, MIGRATION_STATE.MIGRATED);
   assert.equal(j.migration.surveys[0].observed, 'ubuntu-26.04');
+});
+
+test('a matrix that also asks for the old image by name settles nothing', () => {
+  // [ubuntu-latest, ubuntu-24.04] after the window: a runner on 24.04 is far
+  // more likely to be the pinned leg than the floating label running late.
+  const y = [
+    'jobs:',
+    '  a:',
+    '    strategy:',
+    '      matrix:',
+    '        os: [ubuntu-latest, ubuntu-24.04]',
+    '    runs-on: ${{ matrix.os }}',
+  ].join('\n');
+  const sites = extractFloatingSites(y, 'ci.yml');
+  const others = extractLabelSites(y, 'ci.yml');
+  const here = { job: 'a', file: 'ci.yml' };
+  const a = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu24', sites, others, here });
+  assert.equal(a.imageOS, null);
+  assert.match(a.note, /also asks for ubuntu-24\.04 by name/);
+  assert.equal(
+    migrationStatus('ubuntu-latest', { now: AFTER, imageOS: a.imageOS }).state,
+    MIGRATION_STATE.SETTLED,
+    'not STALE, which would fail whatever the threshold',
+  );
+});
+
+test('the job id alone decides when the run came from a file the scan never saw', () => {
+  // A reusable workflow reports the caller in GITHUB_WORKFLOW_REF.
+  const sites = [{ label: 'ubuntu-latest', file: 'reusable.yml', line: 6, col: 14, job: 'build' }];
+  const belongs = jobMatcher({ job: 'build', file: 'caller.yml' }, sites);
+  assert.equal(belongs(sites[0]), true);
+  const strict = jobMatcher({ job: 'build', file: 'reusable.yml' }, sites);
+  assert.equal(strict({ ...sites[0], file: 'other.yml' }), false, 'a scanned file still has to match');
 });
 
 test('a matrix leg is trusted for the two images in the window and no others', () => {

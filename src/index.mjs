@@ -20,6 +20,7 @@ export {
   extractLabelSites,
   extractFloatingSites,
   extractRunsOnTargets,
+  jobMatcher,
   runningJob,
   siteInJob,
   extractRunScripts,

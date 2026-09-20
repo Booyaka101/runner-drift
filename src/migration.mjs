@@ -12,7 +12,7 @@
  */
 
 import { IMAGE_OS_TO_LABEL, migrationFor, migrationStatus } from './labels.mjs';
-import { siteInJob } from './detect.mjs';
+import { jobMatcher } from './detect.mjs';
 import { loadManifest, resolveManifestVersions } from './manifest.mjs';
 import { diffTool } from './diff.mjs';
 import { errorText } from './http.mjs';
@@ -51,27 +51,42 @@ export function imageDiffs(from, to) {
  * matrix leg (the file cannot say which leg this runner is), and a run with no
  * `GITHUB_JOB` to match against (`guard` invoked outside a workflow job).
  */
-export function attributeImageOS({ label, imageOS, sites = [], here = null }) {
+export function attributeImageOS({ label, imageOS, sites = [], others = [], here = null }) {
   if (!imageOS) return { imageOS: null, note: null };
   const m = migrationFor(label);
   const observed = IMAGE_OS_TO_LABEL[String(imageOS).toLowerCase()] ?? null;
-  const endpoint = observed === m?.from || observed === m?.to;
-  const mine = sites.filter((site) => siteInJob(site, here));
+  const belongs = jobMatcher(here, [...sites, ...others]);
+  const mine = sites.filter(belongs);
 
   if (mine.some((site) => !site.viaMatrix)) return { imageOS, note: null };
+
+  // A matrix that lists the observed label itself: this runner is at least as
+  // likely to be serving that leg as the floating one, so neither is evidence.
+  const rival =
+    observed !== null
+    && others.some(
+      (site) => site.viaMatrix && site.label === observed && (here ? belongs(site) : true),
+    );
+  const endpoint = !rival && (observed === m?.from || observed === m?.to);
+
   if (mine.length) {
     if (endpoint) return { imageOS, note: null };
     return {
       imageOS: null,
-      note: `Job "${here.job}" reaches ${label} through a matrix and ran on ${observed ?? imageOS}, `
-        + 'which is neither image in the window, so this runner is treated as a different matrix leg.',
+      note: rival
+        ? `Job "${here.job}" reaches ${label} through a matrix that also asks for ${observed} `
+          + 'by name, so this runner may be serving that leg instead.'
+        : `Job "${here.job}" reaches ${label} through a matrix and ran on ${observed ?? imageOS}, `
+          + 'which is neither image in the window, so this runner is treated as a different matrix leg.',
     };
   }
   if (!here) {
     if (endpoint) return { imageOS, note: null };
     return {
       imageOS: null,
-      note: `This check did not run on ${label}, so its ImageOS is not evidence about the migration.`,
+      note: rival
+        ? `These workflows ask for ${observed} by name, so this runner is not evidence about ${label}.`
+        : `This check did not run on ${label}, so its ImageOS is not evidence about the migration.`,
     };
   }
   return {
@@ -100,10 +115,11 @@ export async function surveyMigration({
   imageOS = null,
   tools = [],
   sites = [],
+  others = [],
   here = null,
   load = loadManifest,
 } = {}) {
-  const attributed = attributeImageOS({ label, imageOS, sites, here });
+  const attributed = attributeImageOS({ label, imageOS, sites, others, here });
   const status = migrationStatus(label, { now, imageOS: attributed.imageOS });
   if (!status) return null;
 

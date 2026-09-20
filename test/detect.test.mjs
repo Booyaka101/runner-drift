@@ -174,6 +174,62 @@ test('a flow-mapping matrix is read like a block one', () => {
   );
 });
 
+test('an expression runs-on resolves a workflow_call input default', () => {
+  const y = [
+    'on:',
+    '  workflow_call:',
+    '    inputs:',
+    '      runner:',
+    '        default: ubuntu-22.04',
+    'jobs:',
+    '  a:',
+    '    runs-on: ${{ inputs.runner }}',
+  ].join('\n');
+  assert.deepEqual(extractLabels(y), ['ubuntu-22.04']);
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => [s.label, s.line]),
+    [['ubuntu-22.04', 5]],
+  );
+});
+
+test('an input named jobs does not become the jobs map', () => {
+  const y = [
+    'on:',
+    '  workflow_dispatch:',
+    '    inputs:',
+    '      jobs:',
+    '        default: all',
+    'jobs:',
+    '  build:',
+    '    runs-on: ubuntu-22.04',
+  ].join('\n');
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => [s.label, s.job]),
+    [['ubuntu-22.04', 'build']],
+  );
+});
+
+test('a step name and a run: script are not places a runner is asked for', () => {
+  const y = [
+    'jobs:',
+    '  build:',
+    '    strategy:',
+    '      matrix: {os: [ubuntu-24.04]}',
+    '    runs-on: ${{ matrix.os }}',
+    '    steps:',
+    '      - name: build on ubuntu-latest',
+    '        if: contains(matrix.os, "ubuntu-latest")',
+    '        run: |',
+    '          echo ubuntu-latest > /tmp/ubuntu-22.04',
+    '      - run: echo ubuntu-latest',
+  ].join('\n');
+  assert.deepEqual(extractFloatingSites(y), []);
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => [s.label, s.line]),
+    [['ubuntu-24.04', 4]],
+  );
+});
+
 test('labelSites: a matrix does not make every mention of a label a site', () => {
   const y = [
     '# this repo moved off ubuntu-latest years ago',
