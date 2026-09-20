@@ -387,20 +387,27 @@ export function runningJob(env = process.env) {
 }
 
 /**
- * A predicate for "this site is one the running job was scheduled from", over
- * the sites a scan actually produced.
+ * Where the running job sits in a scan: what to match sites against, and
+ * whether that identity picks out one job.
  *
  * The file name is dropped from the comparison when no scanned site carries
  * this job id in the file the run reports: a job inside a reusable workflow
  * reports the calling file in `GITHUB_WORKFLOW_REF` while its id lives in the
  * callee, and a scan pointed at a copy of the directory need not match either.
- * The job id still has to agree.
+ * The job id still has to agree, but on its own it is only unique within a
+ * file, so `pinned` is false and the caller is looking at every job in the
+ * repository that shares the id.
  */
+export function jobScope(here, sites = []) {
+  if (!here) return { at: null, pinned: false, match: () => false };
+  const pinned = Boolean(here.file) && sites.some((site) => siteInJob(site, here));
+  const at = pinned ? here : { ...here, file: null };
+  return { at, pinned, match: (site) => siteInJob(site, at) };
+}
+
+/** A predicate for "this site is one the running job was scheduled from". */
 export function jobMatcher(here, sites = []) {
-  if (!here) return () => false;
-  const known = Boolean(here.file) && sites.some((site) => siteInJob(site, here));
-  const at = known ? here : { ...here, file: null };
-  return (site) => siteInJob(site, at);
+  return jobScope(here, sites).match;
 }
 
 /**
@@ -412,23 +419,27 @@ export function jobMatcher(here, sites = []) {
  *
  * `scoped` is whether a running job was identified at all; without one every
  * site in the repository is in scope and the caller has to decide how much that
- * is worth. `direct` is a plain `runs-on: <label>`, `asked` includes reaching
+ * is worth. `placed` is the stronger claim that the job id picked out one job. `direct` is a plain `runs-on: <label>`, `asked` includes reaching
  * the label through a matrix, and `rival` is another site naming `observed`,
  * which the runner is as likely to be serving as the floating one.
  *
  * Inside one job the only rival is a matrix leg, since a job has one `runs-on:`.
- * With no job to scope to, every `runs-on: <observed>` in the repo is one.
+ * That needs the job to be pinned to a file. A job id alone can name a job in
+ * every file that uses it, and then a plain `runs-on: <observed>` under the
+ * same id is as good an explanation as this label, exactly as it is when there
+ * is no job id at all.
  */
 export function labelOwnership({ label, observed = null, sites = [], others = [], here = null }) {
-  const belongs = jobMatcher(here, [...sites, ...others]);
-  const inScope = here ? belongs : () => true;
+  const { match, pinned } = jobScope(here, [...sites, ...others]);
+  const inScope = here ? match : () => true;
   const mine = sites.filter((site) => site.label === label && inScope(site));
   const rivals = others.filter((site) => site.label === observed && inScope(site));
   return {
     scoped: Boolean(here),
+    placed: pinned,
     direct: mine.some((site) => !site.viaMatrix),
     asked: mine.length > 0,
-    rival: observed !== null && (here ? rivals.some((site) => site.viaMatrix) : rivals.length > 0),
+    rival: observed !== null && (pinned ? rivals.some((site) => site.viaMatrix) : rivals.length > 0),
   };
 }
 

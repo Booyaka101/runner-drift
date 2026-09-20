@@ -575,6 +575,46 @@ test('a job id shared by two workflow files is told apart by the file', async ()
   assert.match(s.notes.join(' '), /did not run on ubuntu-latest/);
 });
 
+test('a run from a file the scan never saw cannot claim a shared job id', async () => {
+  // ci.yml and release.yml both have a job called build, and the run reports a
+  // caller the scan does not hold, so only the id is left to match on. One of
+  // the two is pinned to the image this runner is on.
+  const r = await guard(
+    {
+      tools: 'node',
+      'fail-on-migration': '0',
+      json: true,
+      workflows: path.join(FIXTURES, 'workflows-shared-build-id'),
+    },
+    {
+      ImageOS: 'ubuntu26',
+      GITHUB_JOB: 'build',
+      GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/caller.yml@refs/heads/main',
+    },
+    DURING,
+  );
+  const j = jsonOf(r.stdout);
+  const s = j.migration.surveys.find((x) => x.label === 'ubuntu-latest');
+  assert.equal(s.observed, null, 'the runner may be the job pinned to ubuntu-26.04');
+  assert.notEqual(s.state, MIGRATION_STATE.MIGRATED);
+  assert.match(s.notes.join(' '), /More than one workflow has a job called "build"/);
+});
+
+test('the same shared job id withholds the drift explanation', async () => {
+  const r = await guardAcrossTheMove(
+    {
+      workflows: path.join(FIXTURES, 'workflows-shared-build-id'),
+      env: {
+        GITHUB_JOB: 'build',
+        GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/caller.yml@refs/heads/main',
+      },
+    },
+    DURING,
+  );
+  assert.equal(r.code, EXIT_OK);
+  assert.doesNotMatch(r.stdout, /Explained by the scheduled/);
+});
+
 test('a guard step on an unrelated image says nothing about the floating label', async () => {
   const r = await guard(
     { tools: 'node', 'fail-on-migration': '0', json: true },
@@ -668,6 +708,24 @@ test('the job id alone decides when the run came from a file the scan never saw'
   assert.equal(belongs(sites[0]), true);
   const strict = jobMatcher({ job: 'build', file: 'reusable.yml' }, sites);
   assert.equal(strict({ ...sites[0], file: 'other.yml' }), false, 'a scanned file still has to match');
+});
+
+test('a job id the run cannot be placed by does not speak for another file', () => {
+  // The run came from a reusable workflow, so GITHUB_WORKFLOW_REF names a file
+  // the scan does not hold and only the job id is left to match on. Two files
+  // use that id, and one of them is pinned to the image this runner is on.
+  const sites = [{ label: 'ubuntu-latest', file: 'ci.yml', line: 6, col: 14, job: 'build' }];
+  const others = [{ label: 'ubuntu-26.04', file: 'release.yml', line: 6, col: 14, job: 'build' }];
+  const here = { job: 'build', file: 'caller.yml' };
+  const a = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu26', sites, others, here });
+  assert.equal(a.imageOS, null, 'release.yml pins a build job to the image this runner is on');
+  assert.match(a.note, /More than one workflow has a job called "build"/);
+  assert.notEqual(
+    migrationStatus('ubuntu-latest', { now: DURING, imageOS: a.imageOS }).state,
+    MIGRATION_STATE.MIGRATED,
+  );
+  const alone = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu26', sites, others: [], here });
+  assert.equal(alone.imageOS, 'ubuntu26', 'one file uses the id, so the callee is found');
 });
 
 test('a matrix leg is trusted for the two images in the window and no others', () => {

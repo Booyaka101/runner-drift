@@ -410,16 +410,17 @@ async function explainDrift({ migration, lock, label, scan, env }) {
   const here = runningJob(env);
   // `label` is this runner's own: a matrix leg naming it is a pin the repo
   // chose, not the window moving the job, so the explanation is withheld.
-  const { direct, asked, rival } = labelOwnership({
+  const { asked, rival } = labelOwnership({
     label: m.label,
     observed: label,
     sites: scanned.floatingSites,
     others: scanned.labelSites,
     here,
   });
-  // `direct` without a job id says only that some job in the repo asks for the
-  // label, which is not this one. attributeImageOS scopes it the same way.
-  return (here && direct) || (asked && !rival) ? m : null;
+  // A pin to this runner's own label under the same job id is as good an
+  // explanation as the window, whether it is a matrix leg of the job this run
+  // came from or a job of that id in a file the run cannot be placed in.
+  return asked && !rival ? m : null;
 }
 
 /** One stderr line per floating label whose migration fails the gate. */

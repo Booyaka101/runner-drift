@@ -61,9 +61,12 @@ export function attributeImageOS({ label, imageOS, sites = [], others = [], here
   if (!imageOS) return { imageOS: null, note: null };
   const m = migrationFor(label);
   const observed = labelForImageOS(imageOS);
-  const { direct, asked, rival } = labelOwnership({ label, observed, sites, others, here });
+  const { direct, asked, rival, placed } = labelOwnership({ label, observed, sites, others, here });
 
-  if (here && direct) return { imageOS, note: null };
+  // A plain `runs-on:` in the job this run came from settles it, as long as the
+  // job id picked out one job. A job a reusable workflow reports is matched on
+  // the id alone, and an id is unique in a file, not in a repository.
+  if (here && direct && !rival) return { imageOS, note: null };
   const endpoint = !rival && (observed === m?.from || observed === m?.to);
 
   if (!here) {
@@ -79,6 +82,13 @@ export function attributeImageOS({ label, imageOS, sites = [], others = [], here
 
   if (asked) {
     if (endpoint) return { imageOS, note: null };
+    if (rival && !placed) {
+      return {
+        imageOS: null,
+        note: `More than one workflow has a job called "${here.job}", and one of them asks for `
+          + `${observed} by name, so this runner may be that job instead.`,
+      };
+    }
     return {
       imageOS: null,
       note: rival

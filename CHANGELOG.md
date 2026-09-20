@@ -187,6 +187,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   which reads as every locked tool having been removed. Only a read that worked
   is kept.
 
+- A job id the run could not be placed by let one workflow file speak for
+  another. Inside a reusable workflow `GITHUB_WORKFLOW_REF` names the caller,
+  so the job is matched on its id alone, and an id is unique in a file rather
+  than in a repository. A `build` job pinned to `ubuntu-26.04` in `release.yml`
+  could not veto the `build` job on `ubuntu-latest` in `ci.yml`, because only a
+  matrix leg counted as a rival explanation. A run that cannot be placed in one
+  file now treats any job of that id pinned to the observed image as the nearer
+  explanation, exactly as it does when there is no job id at all, and says so
+  rather than reporting the label as migrated.
+
 - Mid-migration, the drift lane attributed the change to the wrong image's
   history. A lock recorded on `ubuntu-24.04` and a runner on `ubuntu-26.04` are
   two operating systems, but guard looked the locked image version up in the
