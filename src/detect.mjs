@@ -237,13 +237,14 @@ function matrixLabels(lines) {
     const key = text.match(/^([ \t]*)(-[ \t]+)?([^:\s][^:\r\n]*)?:([^\r\n]*)$/);
     if (key) {
       // `run: |` and friends: the body below is shell or prose, not YAML values.
+      // A prose key owns its indented lines the same way whether or not it was
+      // written with a block marker, since a plain scalar folds over them too.
       // A dashed key owns the column the dash sits in, so the step's own
       // siblings (`env:`, `with:`) are not read as part of the script.
-      if (/^[|>]/.test(key[4].trim())) {
+      if (/^[|>]/.test(key[4].trim()) || PROSE_KEYS.has((key[3] ?? '').trim().toLowerCase())) {
         scalar = key[1].length + (key[2]?.length ?? 0);
         continue;
       }
-      if (PROSE_KEYS.has((key[3] ?? '').trim().toLowerCase())) continue;
     }
     for (const tok of text.matchAll(/[A-Za-z][A-Za-z0-9.-]*/g)) {
       if (LABEL_SHAPE.test(tok[0])) {
@@ -308,8 +309,9 @@ function jobKeys(lines) {
   let jobsIndent = null;
   let jobIndent = null;
   let current = null;
+  let ended = false;
   for (let i = 0; i < lines.length; i++) {
-    const m = lines[i].match(/^([ \t]*)([^-\s#][^:\r\n]*):/);
+    const m = ended ? null : lines[i].match(/^([ \t]*)([^-\s#][^:\r\n]*):/);
     if (m) {
       const indent = m[1].length;
       const key = m[2].trim().replace(/^(['"])(.*)\1$/, '$2');
@@ -317,7 +319,11 @@ function jobKeys(lines) {
         // Top level only: `on.workflow_dispatch.inputs.jobs` is not the map.
         if (key === 'jobs' && indent === 0) jobsIndent = indent;
       } else if (indent <= jobsIndent) {
+        // The next top-level key closes the map. A key further down at the job
+        // indent belongs to that key, and inventing a job id for it can put a
+        // runner's image on a job that GITHUB_JOB names somewhere else.
         current = null;
+        ended = true;
       } else if (jobIndent === null || indent === jobIndent) {
         jobIndent = indent;
         current = key;

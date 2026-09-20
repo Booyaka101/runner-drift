@@ -51,6 +51,18 @@ export const IMAGE_OS_TO_LABEL = {
   macos26: 'macos-26',
 };
 
+/**
+ * The concrete label an `ImageOS` names, or null for anything else.
+ *
+ * `ImageOS` comes from the environment, so the table is read as data: a plain
+ * property lookup answers `__proto__` and `constructor` with something truthy,
+ * and the migration lane would report that as an image nobody announced.
+ */
+export function labelForImageOS(imageOS) {
+  const key = imageOS ? String(imageOS).toLowerCase() : '';
+  return Object.hasOwn(IMAGE_OS_TO_LABEL, key) ? IMAGE_OS_TO_LABEL[key] : null;
+}
+
 const MACOS_14_BROWNOUTS = [
   '2026-10-05',
   '2026-10-12',
@@ -303,7 +315,7 @@ export function migrationStatus(label, { now = new Date(), imageOS = null } = {}
   // An ImageOS this build does not recognise reads as no observation at all:
   // guard already reports an unknown ImageOS on its own, and guessing here
   // would turn a new image name into a fake anomaly.
-  const observed = imageOS ? (IMAGE_OS_TO_LABEL[String(imageOS).toLowerCase()] ?? null) : null;
+  const observed = labelForImageOS(imageOS);
   const seen = observed === null ? 'none' : observed === m.to ? 'to' : observed === m.from ? 'from' : 'other';
   const state = seen === 'other' ? MIGRATION_STATE.UNEXPECTED : STATE_BY_PHASE[phase][seen];
 

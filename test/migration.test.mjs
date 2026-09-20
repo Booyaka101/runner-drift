@@ -7,6 +7,7 @@ import {
   MIGRATIONS,
   MIGRATION_PHASE,
   MIGRATION_STATE,
+  labelForImageOS,
   migrationBetween,
   migrationFails,
   migrationFor,
@@ -624,6 +625,16 @@ test('a matrix leg is trusted for the two images in the window and no others', (
   const off = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu22', sites: [site], here });
   assert.equal(off.imageOS, null, 'this runner is serving another leg');
   assert.match(off.note, /through a matrix/);
+});
+
+test('an ImageOS that names a property of Object is not an image', () => {
+  // ImageOS is an environment variable, so the table has to be read as data.
+  assert.equal(labelForImageOS('__proto__'), null);
+  assert.equal(labelForImageOS('constructor'), null);
+  const s = migrationStatus('ubuntu-latest', { now: DURING, imageOS: '__proto__' });
+  assert.equal(s.observed, null);
+  assert.equal(s.state, MIGRATION_STATE.AMBIGUOUS);
+  assert.equal(s.anomaly, false);
 });
 
 test('with no GITHUB_JOB the window images are still attributed', () => {

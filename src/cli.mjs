@@ -15,6 +15,7 @@ import {
   deadlineFor,
   isFloating,
   knownLabels,
+  labelForImageOS,
   migratingLabels,
   migrationFails,
   migrationBetween,
@@ -673,7 +674,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   }
 
   const lock = await getLock();
-  let label = (imageOS && IMAGE_OS_TO_LABEL[imageOS.toLowerCase()]) || lock?.label || null;
+  let label = labelForImageOS(imageOS) || lock?.label || null;
 
   if (!label) {
     const detected = await scan();

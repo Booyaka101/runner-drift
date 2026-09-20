@@ -125,7 +125,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `run:` scripts and in step names. That put retirement and migration
   annotations on lines nobody can act on, and, once the migration lane existed,
   could attribute a runner's image to a label the repo never uses. Comments,
-  block scalars and the prose keys (`run`, `name`, `if`) are now skipped. The
+  block scalars and the prose keys (`run`, `name`, `if`) are now skipped, and a
+  prose key takes the indented lines below it with it, since a plain scalar
+  wraps onto them as readily as a `|` block does. The
   rest of the file is still read, because a label reaches `runs-on:` through a
   `workflow_call` input default or an `env:` value as well as through `matrix:`.
 
@@ -142,6 +144,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   rule as the annotations only by label. A matrix leg that names the new image
   itself, next to the floating label, was GitHub moving you; now it is your own
   pin, and the line is withheld.
+
+- A key at the job indent under a *later* top-level block was recorded as a job
+  id. `x-templates:` after the jobs map, with a `build:` under it, produced
+  `runs-on:` sites labelled as job `build`, which is a real job id in the same
+  file. A fabricated id can match `GITHUB_JOB`, so it could have pointed the
+  migration lane at the wrong `runs-on:` line. The map now ends where YAML ends
+  it, at the next top-level key.
+
+- `ImageOS=__proto__` resolved to a label. The env value indexed the
+  `ImageOS` -> label table directly, so any property of `Object.prototype` came
+  back truthy, and the migration lane called it an image nobody announced:
+  `::error`, exit 1, and a summary cell containing a function body. The lookup
+  is an own-key check now, in one place both lanes use.
 
 - A job running inside a reusable workflow had its image discarded. Actions
   reports the *calling* workflow in `GITHUB_WORKFLOW_REF` while `GITHUB_JOB` is

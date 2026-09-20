@@ -11,7 +11,7 @@
  * and Node.js 22 -> 24" is something you can act on before it happens.
  */
 
-import { IMAGE_OS_TO_LABEL, migrationFor, migrationStatus } from './labels.mjs';
+import { labelForImageOS, migrationFor, migrationStatus } from './labels.mjs';
 import { labelOwnership } from './detect.mjs';
 import { diffManifestTools, loadManifest } from './manifest.mjs';
 import { diffTool } from './diff.mjs';
@@ -60,7 +60,7 @@ export function imageDiffs(from, to) {
 export function attributeImageOS({ label, imageOS, sites = [], others = [], here = null }) {
   if (!imageOS) return { imageOS: null, note: null };
   const m = migrationFor(label);
-  const observed = IMAGE_OS_TO_LABEL[String(imageOS).toLowerCase()] ?? null;
+  const observed = labelForImageOS(imageOS);
   const { direct, asked, rival } = labelOwnership({ label, observed, sites, others, here });
 
   if (here && direct) return { imageOS, note: null };

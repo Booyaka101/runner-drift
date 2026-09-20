@@ -119,6 +119,7 @@ export {
   knownLabels,
   deadlineFor,
   isFloating,
+  labelForImageOS,
   migratingLabels,
   migrationBetween,
   migrationFails,

@@ -300,6 +300,47 @@ test('a trailing comment is not part of the label', () => {
   assert.deepEqual(extractRunsOnTargets(y)[1].labels, [SELF_HOSTED, 'linux']);
 });
 
+test('a label written in a step name or a condition is not a runner', () => {
+  // The prose keys hold a plain scalar as often as a block one, and a plain
+  // scalar folds over the lines below it just the same.
+  const y = [
+    'jobs:',
+    '  a:',
+    '    strategy:',
+    '      matrix:',
+    '        os: [ubuntu-24.04]',
+    '    runs-on: ${{ matrix.os }}',
+    '    steps:',
+    '      - name:',
+    '          build on ubuntu-latest',
+    '        run: make',
+    '      - if: >',
+    '          github.repository != "acme/ubuntu-22.04"',
+    '        run: echo skipped',
+  ].join('\n');
+  assert.deepEqual(extractFloatingSites(y), []);
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => s.label),
+    ['ubuntu-24.04'],
+  );
+  assert.deepEqual(extractLabels(y), ['ubuntu-24.04']);
+});
+
+test('a key under the block that follows the jobs map is not a job id', () => {
+  // `x-` template blocks are a real shape, and the id can collide with a job's.
+  const y = [
+    'jobs:',
+    '  build:',
+    '    runs-on: ubuntu-latest',
+    '',
+    'x-templates:',
+    '  build:',
+    '    runs-on: ubuntu-22.04',
+  ].join('\n');
+  assert.equal(extractFloatingSites(y)[0].job, 'build');
+  assert.equal(extractLabelSites(y)[0].job, null);
+});
+
 test('labelSites: floating labels are never a site', () => {
   assert.deepEqual(extractLabelSites('    runs-on: ubuntu-latest\n'), []);
 });
