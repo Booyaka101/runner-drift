@@ -375,6 +375,37 @@ test('a label written in a step name or a condition is not a runner', () => {
   assert.deepEqual(extractLabels(y), ['ubuntu-24.04']);
 });
 
+test('a run-name is a title, not a runner the workflow asks for', () => {
+  const y = [
+    'run-name: nightly build on ubuntu-22.04 by ${{ github.actor }}',
+    'jobs:',
+    '  a:',
+    '    strategy:',
+    '      matrix:',
+    '        os: [ubuntu-24.04]',
+    '    runs-on: ${{ matrix.os }}',
+    '    steps:',
+    "      - run: make",
+  ].join(String.fromCharCode(10));
+  assert.deepEqual(extractLabels(y), ['ubuntu-24.04']);
+  assert.deepEqual(extractFloatingSites(y), []);
+});
+
+test('an input description is prose too', () => {
+  const y = [
+    'on:',
+    '  workflow_call:',
+    '    inputs:',
+    '      runner:',
+    '        description: which runner to use, e.g. ubuntu-22.04',
+    '        default: ubuntu-24.04',
+    'jobs:',
+    '  a:',
+    '    runs-on: ${{ inputs.runner }}',
+  ].join(String.fromCharCode(10));
+  assert.deepEqual(extractLabels(y), ['ubuntu-24.04']);
+});
+
 test('a matrix dimension named after a prose key is still values', () => {
   // `name` is a step title under `steps:` and a matrix axis under `matrix:`.
   const y = [

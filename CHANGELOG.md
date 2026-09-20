@@ -262,6 +262,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   every key is a dimension the job varies over, and the prose keys only hold
   prose outside it.
 
+- A workflow title mentioning a label was read as a runner the workflow asks
+  for. `run-name: nightly build on ubuntu-22.04` annotated the title line with a
+  retirement `::error` for an image the file never uses, as did an input's
+  `description:`. Both are prose keys now, alongside `run`, `name` and `if`.
+  This one predates 1.4.0: the unfiltered scan read them the same way.
+
 - A label written under a key named `name`, `run` or `if` was dropped even when
   that key held a map rather than prose. 1.4.0 taught the matrix fallback to skip
   the keys that hold shell and titles, and an empty one swallowed everything

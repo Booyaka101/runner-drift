@@ -217,11 +217,11 @@ function scanRunsOn(lines) {
  * `${{ env.RUNNER }}` all resolve to values written somewhere above.
  *
  * Broad, but not everything. Comments, block scalars and the keys that hold
- * prose or shell rather than a value (`run:`, `name:`, `if:`) are skipped: a
- * label named there is not a runner the workflow asks for, and an annotation
- * has to land on a line someone can act on.
+ * prose or shell rather than a value (`run:`, `name:`, `run-name:`, `if:`,
+ * `description:`) are skipped: a label named there is not a runner the workflow
+ * asks for, and an annotation has to land on a line someone can act on.
  */
-const PROSE_KEYS = new Set(['run', 'name', 'if']);
+const PROSE_KEYS = new Set(['run', 'name', 'run-name', 'if', 'description']);
 
 /**
  * Whether the lines under an empty prose key are its body rather than a map.
