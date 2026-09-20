@@ -249,6 +249,28 @@ test('labelSites: a matrix does not make every mention of a label a site', () =>
   );
 });
 
+test('a trailing comment is not part of the label', () => {
+  const y = [
+    'jobs:',
+    '  a:',
+    '    runs-on: ubuntu-latest  # floating on purpose',
+    '  b:',
+    '    runs-on: [self-hosted, linux]  # the fleet',
+    '  c:',
+    '    runs-on:',
+    '      - macos-14   # the mac leg',
+  ].join('\n');
+  assert.deepEqual(
+    extractFloatingSites(y).map((s) => [s.label, s.line, s.col]),
+    [['ubuntu-latest', 3, 14]],
+  );
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => s.label),
+    ['linux', 'macos-14'],
+  );
+  assert.deepEqual(extractRunsOnTargets(y)[1].labels, [SELF_HOSTED, 'linux']);
+});
+
 test('labelSites: floating labels are never a site', () => {
   assert.deepEqual(extractLabelSites('    runs-on: ubuntu-latest\n'), []);
 });

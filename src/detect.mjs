@@ -119,6 +119,11 @@ export function commandsInScript(script) {
 }
 
 /** 1-indexed column of the label inside a raw scalar that may be padded or quoted. */
+/** A YAML inline comment: a `#` at the start of the line or after a space. */
+function stripComment(text) {
+  return text.replace(/(^|[ \t])#[^\r\n]*$/, '$1');
+}
+
 function labelColumn(start, raw) {
   const lead = raw.length - raw.trimStart().length;
   return start + lead + (/^['"]/.test(raw.trim()) ? 1 : 0) + 1;
@@ -158,7 +163,8 @@ function scanRunsOn(lines) {
     const m = lines[i].match(/^([ \t]*)runs-on:[ \t]*([^\r\n]*)/);
     if (!m) continue;
     const baseIndent = m[1].length;
-    const value = m[2].trim();
+    const raw = stripComment(m[2]);
+    const value = raw.trim();
     const valueStart = lines[i].length - m[2].length;
 
     // Anchored on the `runs-on:` line itself: the set is the target, so pointing
@@ -172,7 +178,7 @@ function scanRunsOn(lines) {
         if (l.trim() === '') continue;
         if (indentOf(l) <= baseIndent) break;
         const dash = l.match(/^([ \t]*-[ \t]*)([^\r\n]*)/);
-        const item = dash ? dash[2] : l.trim();
+        const item = stripComment(dash ? dash[2] : l.trim()).trim();
         if (item.includes('${{')) expression = target.expression = true;
         else push(item, j + 1, labelColumn(dash ? dash[1].length : indentOf(l), item));
         i = j;
@@ -187,7 +193,7 @@ function scanRunsOn(lines) {
     } else if (value.includes('${{')) {
       expression = target.expression = true;
     } else {
-      push(value, i + 1, labelColumn(valueStart, m[2]));
+      push(value, i + 1, labelColumn(valueStart, raw));
     }
   }
   return { found, targets, expression };
@@ -211,7 +217,7 @@ function matrixLabels(lines) {
   const found = [];
   let scalar = null;
   for (let i = 0; i < lines.length; i++) {
-    const text = lines[i].replace(/(^|[ \t])#[^\r\n]*$/, '$1');
+    const text = stripComment(lines[i]);
     if (scalar !== null) {
       if (!text.trim() || indentOf(text) > scalar) continue;
       scalar = null;

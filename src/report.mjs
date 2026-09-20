@@ -201,7 +201,11 @@ export function stepSummaryMarkdown({
   });
   lines.push(...markdownTable(['Tool', 'Locked', 'Now', 'Change', 'Shipped by'], rows));
   lines.push('');
-  lines.push(`Lock file \`${lockFile}\` updated to image \`${toImage}\`.`);
+  lines.push(
+    written
+      ? `Lock file \`${lockFile}\` updated to image \`${toImage}\`.`
+      : `Lock file \`${lockFile}\` left at image \`${fromImage}\`: \`--no-update-lock\` is set.`,
+  );
   return `${lines.join('\n')}\n`;
 }
 

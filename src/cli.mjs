@@ -294,7 +294,7 @@ function reportRetirement(io, { days, findings }) {
  * images it names. Opt-in like the retirement gate, and like it, useful in a
  * plain lint job with no runner and no lock file.
  */
-async function checkMigration(opts, io, now, imageOS, env, scan, deps) {
+async function checkMigration(opts, io, now, imageOS, env, scan, lock, deps) {
   const days = wholeDays(opts['fail-on-migration'], '--fail-on-migration', io);
   if (days === null) return null;
   const scanned = await scanForLane(scan, io, 'no floating labels to check for migration');
@@ -306,7 +306,8 @@ async function checkMigration(opts, io, now, imageOS, env, scan, deps) {
     if (!byLabel.has(site.label)) byLabel.set(site.label, []);
     byLabel.get(site.label).push(site);
   }
-  const tools = parseToolList(opts.tools) ?? scanned.tools;
+  const locked = lock?.tools ? Object.keys(lock.tools) : null;
+  const tools = parseToolList(opts.tools) ?? (locked?.length ? locked : scanned.tools);
   const load = deps.loadManifest ?? loadManifest;
   const here = runningJob(env);
   const surveys = await Promise.all(
@@ -342,13 +343,19 @@ async function explainDrift({ migration, lock, label, scan, env }) {
 
   const m = migrationBetween(lock.label, label);
   if (!m) return null;
-  const sites = migration
-    ? migration.surveys.flatMap((s) => s.sites)
-    : (await scan()).floatingSites;
-  const ours = sites.filter((site) => site.label === m.label);
+  const scanned = await scan();
+  const sites = scanned.floatingSites;
+  const others = scanned.labelSites;
   const here = runningJob(env);
-  const used = here ? ours.some(jobMatcher(here, sites)) : ours.length > 0;
-  return used ? m : null;
+  const belongs = here ? jobMatcher(here, [...sites, ...others]) : null;
+  const ours = sites.filter((site) => site.label === m.label && (!belongs || belongs(site)));
+
+  // A matrix that asks for this runner's own label by name: the job may simply
+  // have been scheduled onto that leg, and then nothing moved.
+  const rival = others.some(
+    (site) => site.viaMatrix && site.label === label && (!belongs || belongs(site)),
+  );
+  return ours.some((site) => !site.viaMatrix) || (ours.length > 0 && !rival) ? m : null;
 }
 
 /** One stderr line per floating label whose migration fails the gate. */
@@ -553,6 +560,9 @@ async function checkOwnRunner(opts, io, env, deps, window) {
 export async function runGuard(opts, io = process, env = process.env, deps = {}) {
   const lockFile = opts['lock-file'] ?? DEFAULT_LOCK_FILE;
   const scan = scanner(opts);
+  // Read before the lanes run: the migration lane diffs the tools the lock
+  // watches, which is not always what the workflow files mention.
+  const lock = await readLock(lockFile);
   // Writing the lock is the default; `main` resolves --no-update-lock into it,
   // but runGuard is exported and a caller building options by hand has neither.
   const updateLock = opts['update-lock'] !== false;
@@ -584,7 +594,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   // two images right now" and "this job ran on the new one".
   let migration = null;
   if (opts['fail-on-migration'] !== undefined) {
-    migration = await checkMigration(opts, io, deps.now ?? new Date(), imageOS, env, scan, deps);
+    migration = await checkMigration(opts, io, deps.now ?? new Date(), imageOS, env, scan, lock, deps);
     if (!migration) return EXIT_USAGE;
     if (!opts.json && migration.surveys.length) {
       out(io.stdout, migrationReport(migration.surveys));
@@ -630,7 +640,6 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     return retiring || migrating || own?.failing ? EXIT_DRIFT : EXIT_OK;
   }
 
-  const lock = await readLock(lockFile);
   let label = (imageOS && IMAGE_OS_TO_LABEL[imageOS.toLowerCase()]) || lock?.label || null;
 
   if (!label) {
@@ -805,6 +814,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     diffs,
     attribution: attributionMap,
     approximate,
+    written: updateLock,
     lockFile,
   });
   if (opts.summary) await writeStepSummary(summary);

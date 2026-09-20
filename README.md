@@ -836,7 +836,10 @@ date for one.
 - **Detection is a targeted line scan**, not a full YAML parse (the package has zero
   dependencies). It handles inline, flow-sequence and block-sequence `runs-on:`, and
   resolves `runs-on: ${{ matrix.os }}` by harvesting label-shaped values from the same
-  file. If it misses something, `--tools` and `--label` override it completely.
+  file, skipping comments, block scalars and the keys that hold prose (`run`,
+  `name`, `if`). If it misses something, `--tools` and `--label` override it
+  completely. Which tools get diffed is `--tools` first, then the ones the lock
+  file already records, then the scan.
 - **Resolving `uses:` needs the network, and says so when it cannot.** Each unique
   remote reference is one `raw.githubusercontent.com` read of that exact ref's
   `action.yml`, plus, for the failing ones only, one `api.github.com` release

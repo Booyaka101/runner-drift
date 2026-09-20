@@ -116,11 +116,32 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   longer says the tools were "locked in" a file that does not exist.
 
 - A workflow whose `runs-on:` is a matrix expression had every label-shaped word
-  in the file read as a runner it asks for, including the ones in comments and
-  in `run:` lines. That put retirement and migration annotations on lines nobody
-  can act on, and, once the migration lane existed, could attribute a runner's
-  image to a label the repo never uses. The scan is now scoped to the file's
-  `matrix:` blocks, with comments dropped.
+  in the file read as a runner it asks for, including the ones in comments, in
+  `run:` scripts and in step names. That put retirement and migration
+  annotations on lines nobody can act on, and, once the migration lane existed,
+  could attribute a runner's image to a label the repo never uses. Comments,
+  block scalars and the prose keys (`run`, `name`, `if`) are now skipped. The
+  rest of the file is still read, because a label reaches `runs-on:` through a
+  `workflow_call` input default or an `env:` value as well as through `matrix:`.
+
+- A trailing comment on a `runs-on:` line was part of the label:
+  `runs-on: ubuntu-latest  # floating on purpose` parsed as the whole string, so
+  the line was not a floating site and the migration lane had nothing to say
+  about it. Both scanners strip the comment first.
+
+- The step summary on a drift run said "Lock file `x` updated to image `y`"
+  under `--no-update-lock`, which had left the file alone. It now says the file
+  was left where it was, and why.
+
+- The line that credits the migration for the tool drift followed the same job
+  rule as the annotations only by label. A matrix leg that names the new image
+  itself, next to the floating label, was GitHub moving you; now it is your own
+  pin, and the line is withheld.
+
+- `guard --fail-on-migration` diffed the tools named in the workflow files even
+  when the lock file listed a different set. The retirement lane has always
+  preferred the lock. Both lanes now read `--tools`, then the lock, then the
+  scan.
 
 [1.4.0]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.4.0
 

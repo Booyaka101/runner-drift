@@ -283,6 +283,34 @@ test('runGuard writes the lock by default, with no update-lock key at all', asyn
   }
 });
 
+test('the drift summary does not claim a lock update that --no-update-lock stopped', async () => {
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  const summaryFile = path.join(dir, 'summary.md');
+  await writeFile(summaryFile, '', 'utf8');
+  const prev = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = summaryFile;
+  try {
+    await writeLock(
+      {
+        label: 'ubuntu-22.04',
+        imageOS: 'ubuntu22',
+        imageVersion: '20260623.199.1',
+        tools: { 'Node.js': { versions: ['18.0.0'], source: 'probe' } },
+      },
+      lockFile,
+    );
+    await guard({ tools: 'node', 'lock-file': lockFile, 'update-lock': false });
+    const md = await readFile(summaryFile, 'utf8');
+    assert.match(md, /left at image `20260623\.199\.1`/);
+    assert.ok(!md.includes('updated to image'), 'nothing was updated');
+  } finally {
+    if (prev === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+    else process.env.GITHUB_STEP_SUMMARY = prev;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('--no-update-lock leaves the lock alone', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');

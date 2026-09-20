@@ -685,6 +685,40 @@ test('--json names the explanation without --fail-on-migration too', async () =>
   assert.equal(j.migration, undefined, 'the lane itself still needs the flag');
 });
 
+test('a matrix leg pinned to the new image is not the migration arriving', async () => {
+  // matrix: [ubuntu-latest, ubuntu-26.04]. This runner is on 26.04, which the
+  // job asks for by name, so the jump from the lock is not GitHub's doing.
+  const r = await guardAcrossTheMove(
+    { workflows: path.join(FIXTURES, 'workflows-matrix') },
+    DURING,
+  );
+  assert.ok(!r.stdout.includes('Explained by'), 'the pinned leg asks for 26.04 itself');
+  assert.match(r.stdout, /Node\.js 22\.23\.2 -> /, 'the drift is still reported');
+});
+
+test('the migration lane diffs the tools the lock watches', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'runner-drift-migration-'));
+  const lockFile = path.join(dir, 'runner-lock.json');
+  try {
+    await writeLock(
+      {
+        label: 'ubuntu-24.04',
+        imageOS: 'ubuntu24',
+        imageVersion: '20260907.300.1',
+        tools: { Python: { versions: ['3.12.3'], source: 'probe' } },
+      },
+      lockFile,
+    );
+    const r = await guard({ 'fail-on-migration': '30', 'lock-file': lockFile, json: true });
+    const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+    const tools = j.migration.surveys[0].toolDiffs.map((d) => d.tool);
+    assert.ok(tools.includes('Python'), 'the locked tool is in the diff');
+    assert.ok(!tools.includes('Node.js'), 'and the ones only the workflows mention are not');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('a repo that pins its runners is not told GitHub moved it', async () => {
   // The same 24.04 -> 26.04 jump, in a repo whose workflows never say
   // ubuntu-latest: someone bumped the pin by hand and owns the upgrade.
