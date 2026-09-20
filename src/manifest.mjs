@@ -369,7 +369,7 @@ export function diffManifestTools(from, to, tools) {
  * @returns {{map:Record<string,string[]>, missing:string[]}}
  */
 export function resolveManifestVersions(manifest, tools) {
-  const map = {};
+  const map = Object.create(null);
   const missing = [];
   for (const t of tools) {
     const hit = lookupTool(manifest, manifestCandidates(t));

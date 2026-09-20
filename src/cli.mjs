@@ -30,6 +30,7 @@ import { detect, labelOwnership, runningJob, SELF_HOSTED } from './detect.mjs';
 import { canonicalTool, knownTools, MANIFEST_CANDIDATES } from './tools.mjs';
 import { probeTool, isProbeable } from './probe.mjs';
 import { diffTool, shouldFail, maxSeverity } from './diff.mjs';
+import { lookup } from './tables.mjs';
 import { readLock, writeLock, lockPayload, DEFAULT_LOCK_FILE, toolsEntry, toVersionMap } from './lock.mjs';
 import {
   planReport,
@@ -548,7 +549,7 @@ export async function runInit(opts, io = process) {
   }
 
   const { map, missing } = resolveManifestVersions(manifest, tools);
-  const lockTools = {};
+  const lockTools = Object.create(null);
   for (const [t, versions] of Object.entries(map)) {
     lockTools[t] = toolsEntry(versions, 'manifest');
   }
@@ -740,7 +741,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   }
 
   // Observe the live runner: probe first, manifest as the fallback.
-  const observed = {};
+  const observed = Object.create(null);
   const probeNotes = [];
   const needManifest = [];
   for (const t of tools) {
@@ -839,12 +840,12 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   // Diff against the lock.
   const lockedMap = toVersionMap(lock.tools);
   const observedMap = toVersionMap(observed);
-  const watched = tools.filter((t) => t in lockedMap || t in observedMap);
-  const diffs = watched.map((t) => diffTool(t, lockedMap[t] ?? null, observedMap[t] ?? null));
+  const watched = tools.filter((t) => Object.hasOwn(lockedMap, t) || Object.hasOwn(observedMap, t));
+  const diffs = watched.map((t) => diffTool(t, lookup(lockedMap, t), lookup(observedMap, t)));
   const changed = diffs.filter((d) => d.changed);
 
   // Attribute each change to the runner-images commit that shipped it.
-  let attributionMap = {};
+  let attributionMap = Object.create(null);
   if (changed.length && lock.imageVersion && lock.imageVersion !== imageVersion) {
     try {
       const commits = await listManifestCommits(label);
@@ -916,7 +917,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
       );
     }
     for (const d of changed) {
-      const a = attributionMap[d.tool];
+      const a = lookup(attributionMap, d.tool);
       out(
         io.stdout,
         `  ${d.tool} ${d.from.join(',') || '(absent)'} -> ${d.to.join(',') || '(absent)'}  ${d.detail}` +

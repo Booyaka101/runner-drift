@@ -123,6 +123,31 @@ test('drift is reported with a ::warning and exits 0 by default', async () => {
   }
 });
 
+test('a lock file naming a tool after a property of Object diffs like any other', async () => {
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  try {
+    // Written as text: a `__proto__` key survives JSON.parse as an own property,
+    // but an object literal would set the prototype instead.
+    await writeFile(
+      lockFile,
+      `{"schemaVersion":${SCHEMA_VERSION},"label":"ubuntu-22.04","imageOS":"ubuntu22",`
+        + `"imageVersion":"${IMAGE}","tools":{`
+        + `"constructor":{"versions":["1.0.0"],"source":"manifest"},`
+        + `"__proto__":{"versions":["2.0.0"],"source":"manifest"}}}`,
+      'utf8',
+    );
+    const r = await guard({ 'lock-file': lockFile, 'update-lock': false }, ENV, {
+      loadManifest: fixtureLoader(),
+    });
+    assert.equal(r.code, EXIT_OK);
+    assert.match(r.stdout, /constructor 1\.0\.0 -> \(absent\)/);
+    assert.match(r.stdout, /__proto__ 2\.0\.0 -> \(absent\)/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('exit code 1 only under --fail-on major (and above)', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');

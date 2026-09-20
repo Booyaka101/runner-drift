@@ -90,9 +90,9 @@ export function toolsEntry(versions, source, extra = {}) {
   return { versions: [...versions], source, ...extra };
 }
 
-/** `{Tool: {versions, source}}` -> `{Tool: versions[]}` */
+/** `{Tool: {versions, source}}` -> `{Tool: versions[]}`, keyed without a prototype. */
 export function toVersionMap(tools) {
-  const out = {};
+  const out = Object.create(null);
   for (const [k, v] of Object.entries(tools ?? {})) {
     out[k] = Array.isArray(v) ? v : (v?.versions ?? []);
   }

@@ -19,6 +19,7 @@ import {
   retirementStatus,
 } from './labels.mjs';
 import { REF_STATUS } from './runtimes.mjs';
+import { lookup } from './tables.mjs';
 import {
   MINIMUM_REGISTRATION_VERSION,
   RUNNER_STATUS,
@@ -202,7 +203,7 @@ export function stepSummaryMarkdown({
   }
 
   const rows = changed.map((d) => {
-    const a = attribution[d.tool];
+    const a = lookup(attribution, d.tool);
     const shipped = a
       ? `[${a.imageVersion ?? a.sha.slice(0, 7)}](${a.url})${a.exact ? '' : ' _(approx)_'}`
       : '—';
@@ -264,7 +265,7 @@ export function annotations(diffs, attribution = {}, label = '') {
   return diffs
     .filter((d) => d.changed)
     .map((d) => {
-      const a = attribution[d.tool];
+      const a = lookup(attribution, d.tool);
       const where = a ? ` — shipped by ${a.imageVersion ?? a.sha.slice(0, 7)} ${a.url}` : '';
       const sev = d.severity.toUpperCase();
       const detail = d.detail === sev ? sev : `${sev}: ${d.detail}`;

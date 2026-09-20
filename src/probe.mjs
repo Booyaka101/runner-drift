@@ -78,7 +78,7 @@ export function probeTool(tool, { timeoutMs = 15000 } = {}) {
 
 /** Probe many tools. Never throws. */
 export function probeTools(tools, opts = {}) {
-  const out = {};
+  const out = Object.create(null);
   for (const t of tools) out[t] = probeTool(t, opts);
   return out;
 }

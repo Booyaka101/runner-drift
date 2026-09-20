@@ -109,6 +109,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   number, so a threshold sitting exactly on a boundary can fire a day later than
   it did in 1.3.0.
 
+- The exported `runGuard` now writes the lock file unless the caller passes
+  `{ 'update-lock': false }`, on the drift path as well as the first run. It used
+  to write on a first run and stay silent on a drift run, because the drift path
+  read the key as a plain boolean and a caller building options by hand has
+  neither the flag nor the parser default. The CLI is unaffected: it sets the key
+  either way.
+
 - `resolveManifestVersions` moved from `src/cli.mjs` to `src/manifest.mjs`, where
   the rest of the manifest reading lives, and is re-exported from `cli.mjs` so
   the public surface is unchanged. The migration lane needed it and importing it
@@ -179,6 +186,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   in the migration lane could have left the drift lane with no manifest at all,
   which reads as every locked tool having been removed. Only a read that worked
   is kept.
+
+- A tool named after a property of `Object` crashed the drift diff. The maps the
+  diff is built from are keyed by tool name, which comes from the lock file,
+  `--tools` or the scanner, and they were plain objects: `'constructor' in
+  lockedMap` was true, `diffTool` got a function where a version list belongs,
+  and guard exited 2 with a report-this-bug prompt. The attribution map had the
+  same hole and was the next line to crash. Those maps have no prototype now,
+  and the two that arrive as arguments to a public function are read as data,
+  so such a tool diffs like any other. `__proto__` was worse than a crash: the
+  entry was silently dropped on the way in, so a locked tool of that name was
+  never compared at all.
 
 - Every table keyed by a runner label answered `__proto__` and `constructor`
   with something truthy, so `plan --from constructor` took the resolved-migration

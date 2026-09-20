@@ -86,6 +86,15 @@ test('annotations name the tool, the change and the shipping commit', () => {
   assert.match(line, /shipped by 20260720\.234\.2/);
 });
 
+test('a tool named after a property of Object has no attribution, not a fake one', () => {
+  const diffs = [diffTool('constructor', ['1.0.0'], ['2.0.0'])];
+  const [line] = annotations(diffs, {}, 'ubuntu-22.04');
+  assert.match(line, /constructor drifted on ubuntu-22\.04: 1\.0\.0 -> 2\.0\.0/);
+  assert.doesNotMatch(line, /shipped by/);
+  const md = stepSummaryMarkdown({ label: 'ubuntu-22.04', imageVersion: '20260720.234.2', diffs });
+  assert.match(md, /`constructor`/);
+});
+
 test('unchanged tools produce no annotations', () => {
   assert.deepEqual(annotations([diffTool('CMake', ['3.31.6'], ['3.31.6'])]), []);
 });
