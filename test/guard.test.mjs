@@ -5,7 +5,7 @@ import os from 'node:os';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { loaderFor, runGuard, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
 import { readLock, writeLock, SCHEMA_VERSION } from '../src/lock.mjs';
-import { captureIO, fixtureLoader, FIXTURES } from './helpers.mjs';
+import { captureIO, fixtureLoader, FIXTURES, jsonOf, stubApi } from './helpers.mjs';
 
 async function tmp() {
   return mkdtemp(path.join(os.tmpdir(), 'runner-drift-test-'));
@@ -61,7 +61,7 @@ test('--json off an unknown image still prints what the lanes found', async () =
       { now: new Date('2026-09-20T00:00:00Z'), loadManifest: fixtureLoader({ 'ubuntu-24.04': 'ubuntu-24.04@2026-09' }) },
     );
     assert.match(r.stdout, /Unknown runner label/);
-    const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+    const j = jsonOf(r.stdout);
     assert.equal(j.migration.surveys[0].label, 'ubuntu-latest');
   } finally {
     await rm(dir, { recursive: true, force: true });
@@ -148,6 +148,39 @@ test('a lock file naming a tool after a property of Object diffs like any other'
   }
 });
 
+test('a lock from the other side of a migration is not attributed to this image history', async () => {
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  const api = stubApi(() => ({ status: 200, body: [] }));
+  try {
+    await writeLock(
+      {
+        label: 'ubuntu-24.04',
+        imageOS: 'ubuntu24',
+        imageVersion: '20260720.247.2',
+        tools: { 'Node.js': { versions: ['18.0.0'], source: 'probe' } },
+      },
+      lockFile,
+    );
+    const r = await guard({ tools: 'node', 'lock-file': lockFile, 'update-lock': false }, {
+      ImageVersion: '20260907.131.1',
+      ImageOS: 'ubuntu26',
+    });
+    assert.equal(r.code, EXIT_OK);
+    assert.match(
+      r.stdout,
+      /ubuntu-24\.04 image 20260720\.247\.2 -> ubuntu-26\.04 image 20260907\.131\.1/,
+      'both labels named, because the two images are different operating systems',
+    );
+    assert.deepEqual(api.calls, [], 'no commit in the 26.04 history shipped a 24.04 difference');
+    assert.doesNotMatch(r.stdout, /Attribution unavailable/);
+    assert.doesNotMatch(r.stdout, /shipped by/);
+  } finally {
+    api.restore();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('exit code 1 only under --fail-on major (and above)', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');
@@ -230,7 +263,7 @@ test('--json off a hosted runner still prints the retirement document', async ()
     },
     {},
   );
-  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const j = jsonOf(r.stdout);
   assert.ok(j.retirement.findings.length, 'the lane ran, so its findings are in the document');
 });
 
@@ -381,15 +414,15 @@ test('--json says whether the lock was written', async () => {
       {
         label: 'ubuntu-22.04',
         imageOS: 'ubuntu22',
-        imageVersion: '20260623.199.1',
+        imageVersion: IMAGE,
         tools: { 'Node.js': { versions: ['18.0.0'], source: 'probe' } },
       },
       lockFile,
     );
     const off = await guard({ tools: 'node', 'lock-file': lockFile, 'update-lock': false, json: true });
-    assert.equal(JSON.parse(off.stdout.slice(off.stdout.indexOf('{'))).written, false);
+    assert.equal(jsonOf(off.stdout).written, false);
     const on = await guard({ tools: 'node', 'lock-file': lockFile, json: true });
-    assert.equal(JSON.parse(on.stdout.slice(on.stdout.indexOf('{'))).written, true);
+    assert.equal(jsonOf(on.stdout).written, true);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -151,6 +151,7 @@ const SEVERITY_BADGE = {
 /** GitHub step-summary markdown for a `guard` run. */
 export function stepSummaryMarkdown({
   label,
+  fromLabel = null,
   fromImage,
   toImage,
   diffs,
@@ -181,7 +182,11 @@ export function stepSummaryMarkdown({
   }
 
   const changed = diffs.filter((d) => d.changed);
-  lines.push(`\`${label}\` image \`${fromImage}\` → \`${toImage}\``);
+  lines.push(
+    fromLabel && fromLabel !== label
+      ? `\`${fromLabel}\` image \`${fromImage}\` → \`${label}\` image \`${toImage}\``
+      : `\`${label}\` image \`${fromImage}\` → \`${toImage}\``,
+  );
   if (approximate) {
     lines.push('');
     lines.push(

@@ -844,9 +844,18 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   const diffs = watched.map((t) => diffTool(t, lookup(lockedMap, t), lookup(observedMap, t)));
   const changed = diffs.filter((d) => d.changed);
 
+  // A lock recorded on another label is a different operating system, not an
+  // image bump: the version in it was never a version of this label, and no
+  // commit in this label's history shipped the difference. During the
+  // `ubuntu-latest` migration that is the ordinary case, not an edge one.
+  const movedLabel = Boolean(lock.label) && lock.label !== label;
+  const imageRange = movedLabel
+    ? `${lock.label} image ${lock.imageVersion} -> ${label} image ${imageVersion}`
+    : `${label} image ${lock.imageVersion} -> ${imageVersion}`;
+
   // Attribute each change to the runner-images commit that shipped it.
   let attributionMap = Object.create(null);
-  if (changed.length && lock.imageVersion && lock.imageVersion !== imageVersion) {
+  if (changed.length && !movedLabel && lock.imageVersion && lock.imageVersion !== imageVersion) {
     try {
       const commits = await listManifestCommits(label);
       const window = commitWindow(commits, lock.imageVersion, imageVersion);
@@ -880,6 +889,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   const summary = stepSummaryMarkdown({
     label,
     explains: explained,
+    fromLabel: movedLabel ? lock.label : null,
     fromImage: lock.imageVersion ?? '(unknown)',
     toImage: imageVersion,
     diffs,
@@ -900,15 +910,15 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   }
 
   if (opts.json) {
-    const payload = { label, from: lock.imageVersion, to: imageVersion, approximate, written: updateLock, diffs, attribution: attributionMap };
+    const payload = { label, fromLabel: lock.label ?? null, from: lock.imageVersion, to: imageVersion, approximate, written: updateLock, diffs, attribution: attributionMap };
     payload.explains = explained?.label ?? null;
     if (retirement) payload.retirement = retirement;
     if (migration) payload.migration = { ...migration, explains: explained?.label ?? null };
     out(io.stdout, JSON.stringify(payload, null, 2));
   } else if (!changed.length) {
-    out(io.stdout, `No drift — ${label} image ${lock.imageVersion} -> ${imageVersion}, ${diffs.length} tool(s) unchanged.`);
+    out(io.stdout, `No drift — ${imageRange}, ${diffs.length} tool(s) unchanged.`);
   } else {
-    out(io.stdout, `${label} image ${lock.imageVersion} -> ${imageVersion}${approximate ? ' (attribution approximate)' : ''}`);
+    out(io.stdout, `${imageRange}${approximate ? ' (attribution approximate)' : ''}`);
     if (explained) {
       out(
         io.stdout,

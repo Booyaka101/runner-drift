@@ -187,6 +187,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   which reads as every locked tool having been removed. Only a read that worked
   is kept.
 
+- Mid-migration, the drift lane attributed the change to the wrong image's
+  history. A lock recorded on `ubuntu-24.04` and a runner on `ubuntu-26.04` are
+  two operating systems, but guard looked the locked image version up in the
+  26.04 commit list, found nothing, and fell back to the nearest 26.04 commit,
+  so every moved tool was stamped with a commit that did not ship it. The header
+  had the same shape: `ubuntu-26.04 image 20260720.247.2 -> 20260907.131.1`,
+  where the first version is a 24.04 image. A run whose label moved names both
+  labels now and attributes nothing, in the log, the step summary and `--json`,
+  which gained `fromLabel`.
+
 - A tool named after a property of `Object` crashed the drift diff. The maps the
   diff is built from are keyed by tool name, which comes from the lock file,
   `--tools` or the scanner, and they were plain objects: `'constructor' in

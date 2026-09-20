@@ -9,7 +9,7 @@ import {
 } from '../src/report.mjs';
 import { detect } from '../src/detect.mjs';
 import { runGuard, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
-import { captureIO, FIXTURES } from './helpers.mjs';
+import { captureIO, FIXTURES, jsonOf } from './helpers.mjs';
 
 // At this date macos-14 browns out in 54 days and retires in 82;
 // ubuntu-22.04 is 223 and 248 days out.
@@ -288,8 +288,7 @@ test('retirement rides along with the normal guard flow and its JSON', async () 
       { ImageVersion: '20260720.234.2', ImageOS: 'ubuntu22' },
     );
     assert.equal(r.code, EXIT_DRIFT);
-    const jsonStart = r.stdout.indexOf('{');
-    const parsed = JSON.parse(r.stdout.slice(jsonStart));
+    const parsed = jsonOf(r.stdout);
     assert.equal(parsed.baseline, true);
     assert.equal(parsed.retirement.days, 60);
     assert.equal(parsed.retirement.findings.length, 1);

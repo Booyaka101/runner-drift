@@ -103,6 +103,18 @@ export function runnerRoutes({ scopePath, fleet, recorded, releases, listing = n
 }
 
 /** Capture stdout/stderr from a command function. */
+/**
+ * The `--json` document a run printed, past the annotation lines above it.
+ * Found by the line the document opens on: an annotation can contain a brace of
+ * its own, and the rate-limit hint spells out `${{ github.token }}`.
+ */
+export function jsonOf(stdout) {
+  const at = stdout.search(/^\{$/m);
+  if (at < 0) throw new Error(`no JSON document in:
+${stdout}`);
+  return JSON.parse(stdout.slice(at));
+}
+
 export function captureIO() {
   const outChunks = [];
   const errChunks = [];

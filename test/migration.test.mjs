@@ -20,7 +20,7 @@ import { migrationAnnotations, migrationLines, migrationSummaryMarkdown } from '
 import { detect, extractFloatingSites, extractLabelSites, jobMatcher } from '../src/detect.mjs';
 import { writeLock } from '../src/lock.mjs';
 import { runGuard, runPlan, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
-import { captureIO, fixtureLoader, FIXTURES } from './helpers.mjs';
+import { captureIO, fixtureLoader, FIXTURES, jsonOf } from './helpers.mjs';
 
 const WORKFLOWS = path.join(FIXTURES, 'workflows-migration');
 
@@ -535,7 +535,7 @@ test('a bad --fail-on-migration value is a usage error', async () => {
 
 test('the migration ride-along appears in guard --json', async () => {
   const r = await guard({ tools: 'node', 'fail-on-migration': '30', json: true });
-  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const j = jsonOf(r.stdout);
   assert.equal(j.migration.days, 30);
   assert.equal(j.migration.surveys.length, 1);
   assert.equal(j.migration.surveys[0].state, 'pending');
@@ -568,7 +568,7 @@ test('a job id shared by two workflow files is told apart by the file', async ()
     },
     DURING,
   );
-  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const j = jsonOf(r.stdout);
   const s = j.migration.surveys[0];
   assert.equal(s.observed, null, 'the windows job is not evidence about ubuntu-latest');
   assert.notEqual(s.state, MIGRATION_STATE.UNEXPECTED);
@@ -581,7 +581,7 @@ test('a guard step on an unrelated image says nothing about the floating label',
     { ImageOS: 'ubuntu22', ...inJob('lint') },
     BEFORE,
   );
-  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const j = jsonOf(r.stdout);
   const s = j.migration.surveys[0];
   assert.equal(s.state, MIGRATION_STATE.PENDING, 'the lint runner is not evidence');
   assert.equal(s.observed, null);
@@ -596,7 +596,7 @@ test('the job that does ask for the label owns the image it ran on', async () =>
     { ImageOS: 'ubuntu22', ...inJob('build') },
     BEFORE,
   );
-  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const j = jsonOf(r.stdout);
   assert.equal(j.migration.surveys[0].state, MIGRATION_STATE.UNEXPECTED);
   assert.deepEqual(j.migration.surveys[0].notes, []);
   assert.equal(r.code, EXIT_DRIFT, 'ubuntu-latest serving 22.04 is a real anomaly');
@@ -610,7 +610,7 @@ test('a job pinned to the old image is not the floating label running late', asy
     { ImageOS: 'ubuntu24', ...inJob('pinned') },
     AFTER,
   );
-  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const j = jsonOf(r.stdout);
   assert.equal(j.migration.surveys[0].state, MIGRATION_STATE.SETTLED);
   assert.equal(r.code, EXIT_OK, 'a pinned job is not a stale floating runner');
   assert.ok(!r.stdout.includes('::error'), 'nothing to raise');
@@ -632,7 +632,7 @@ test('mid-window, the job on the floating label still reads as migrated', async 
     { ImageOS: 'ubuntu26', ...inJob('build') },
     DURING,
   );
-  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const j = jsonOf(r.stdout);
   assert.equal(j.migration.surveys[0].state, MIGRATION_STATE.MIGRATED);
   assert.equal(j.migration.surveys[0].observed, 'ubuntu-26.04');
 });
@@ -832,7 +832,7 @@ test('the step summary names the explanation the way stdout does', async () => {
 
 test('--json names the explanation without --fail-on-migration too', async () => {
   const r = await guardAcrossTheMove({ json: true }, DURING);
-  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const j = jsonOf(r.stdout);
   assert.equal(j.explains, 'ubuntu-latest');
   assert.equal(j.migration, undefined, 'the lane itself still needs the flag');
 });
@@ -848,7 +848,7 @@ test('a quoted job id is the same job GITHUB_JOB names', async () => {
     { ImageOS: 'ubuntu26', ...inJob('build') },
     DURING,
   );
-  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const j = jsonOf(r.stdout);
   const s = j.migration.surveys[0];
   assert.equal(s.observed, 'ubuntu-26.04', 'the runner is attributed to "build"');
   assert.equal(s.state, MIGRATION_STATE.MIGRATED);
@@ -857,7 +857,7 @@ test('a quoted job id is the same job GITHUB_JOB names', async () => {
 
 test('an empty --tools list falls back like no list at all', async () => {
   const r = await guard({ tools: ',', 'fail-on-migration': '30', json: true }, {}, BEFORE);
-  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const j = jsonOf(r.stdout);
   assert.ok(
     j.migration.surveys[0].toolDiffs.length > 0,
     'the workflows are still scanned for tools',
@@ -889,7 +889,7 @@ test('the migration lane diffs the tools the lock watches', async () => {
       lockFile,
     );
     const r = await guard({ 'fail-on-migration': '30', 'lock-file': lockFile, json: true });
-    const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+    const j = jsonOf(r.stdout);
     const tools = j.migration.surveys[0].toolDiffs.map((d) => d.tool);
     assert.ok(tools.includes('Python'), 'the locked tool is in the diff');
     assert.ok(!tools.includes('Node.js'), 'and the ones only the workflows mention are not');

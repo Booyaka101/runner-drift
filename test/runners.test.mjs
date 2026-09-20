@@ -34,7 +34,7 @@ import {
 } from '../src/report.mjs';
 import { detect } from '../src/detect.mjs';
 import { runRunners, runGuard, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
-import { captureIO, readRunnerFixtures, runnerRoutes, stubApi, FIXTURES } from './helpers.mjs';
+import { captureIO, FIXTURES, jsonOf, readRunnerFixtures, runnerRoutes, stubApi } from './helpers.mjs';
 
 /**
  * Every date below comes from the recorded live responses in
@@ -930,7 +930,7 @@ test('runners --repo defaults to $GITHUB_REPOSITORY', async () => {
 test('runners --json shapes the whole survey', async () => {
   const r = await runners({ org: 'acme', 'fail-on-deprecation': '30', json: true });
   assert.equal(r.code, EXIT_DRIFT);
-  const parsed = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const parsed = jsonOf(r.stdout);
   assert.equal(parsed.status, 'OK');
   assert.equal(parsed.scope.name, 'acme');
   assert.equal(parsed.windowDays, 30);
@@ -1069,7 +1069,7 @@ test('guard --json carries the runners block on the self-hosted path', async () 
     { org: 'acme', 'fail-on-deprecation': '30', json: true },
   );
   assert.equal(r.code, EXIT_DRIFT);
-  const parsed = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const parsed = jsonOf(r.stdout);
   assert.equal(parsed.runners.groups[0].version, '2.335.1');
   assert.equal(parsed.runners.groups[0].status, 'RUNTIME-DUE');
   assert.equal(parsed.runners.totalCount, 1);
