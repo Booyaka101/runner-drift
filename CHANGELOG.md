@@ -100,6 +100,9 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the number beside it can no longer disagree. Some `runners` countdowns move by
   a day: `2.335.1 runtime ends 2026-09-24` was "(16 days)" on 2026-09-09 and is
   now "(15 days)", which is the number of days you can actually still run it.
+  `--fail-on-deprecation` and `--fail-on-retirement` compare against that same
+  number, so a threshold sitting exactly on a boundary can fire a day later than
+  it did in 1.3.0.
 
 - `resolveManifestVersions` moved from `src/cli.mjs` to `src/manifest.mjs`, where
   the rest of the manifest reading lives, and is re-exported from `cli.mjs` so

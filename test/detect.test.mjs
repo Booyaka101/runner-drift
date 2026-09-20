@@ -249,6 +249,15 @@ test('labelSites: a matrix does not make every mention of a label a site', () =>
   );
 });
 
+test('a quoted job id is recorded without its quotes', () => {
+  const y = [
+    'jobs:',
+    '  "build":',
+    '    runs-on: ubuntu-latest',
+  ].join('\n');
+  assert.equal(extractFloatingSites(y)[0].job, 'build');
+});
+
 test('a trailing comment is not part of the label', () => {
   const y = [
     'jobs:',

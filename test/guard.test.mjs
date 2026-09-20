@@ -311,6 +311,25 @@ test('the drift summary does not claim a lock update that --no-update-lock stopp
   }
 });
 
+test('a lock this version cannot read does not swallow the self-hosted skip', async () => {
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  try {
+    await writeFile(lockFile, JSON.stringify({ schemaVersion: 99, label: 'ubuntu-24.04' }), 'utf8');
+    const r = await guard({
+      tools: 'node',
+      'lock-file': lockFile,
+      'fail-on-migration': '0',
+      'as-of': '2026-09-20',
+      workflows: path.join(FIXTURES, 'workflows-migration'),
+    }, {});
+    assert.equal(r.code, EXIT_OK, 'no ImageVersion is a skip, not a lock error');
+    assert.match(r.stdout, /not a GitHub-hosted runner/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('--no-update-lock leaves the lock alone', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');

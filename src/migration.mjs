@@ -12,7 +12,7 @@
  */
 
 import { IMAGE_OS_TO_LABEL, migrationFor, migrationStatus } from './labels.mjs';
-import { jobMatcher } from './detect.mjs';
+import { labelOwnership } from './detect.mjs';
 import { loadManifest, resolveManifestVersions } from './manifest.mjs';
 import { diffTool } from './diff.mjs';
 import { errorText } from './http.mjs';
@@ -55,21 +55,22 @@ export function attributeImageOS({ label, imageOS, sites = [], others = [], here
   if (!imageOS) return { imageOS: null, note: null };
   const m = migrationFor(label);
   const observed = IMAGE_OS_TO_LABEL[String(imageOS).toLowerCase()] ?? null;
-  const belongs = jobMatcher(here, [...sites, ...others]);
-  const mine = sites.filter(belongs);
+  const { direct, asked, rival } = labelOwnership({ label, observed, sites, others, here });
 
-  if (mine.some((site) => !site.viaMatrix)) return { imageOS, note: null };
-
-  // A matrix that lists the observed label itself: this runner is at least as
-  // likely to be serving that leg as the floating one, so neither is evidence.
-  const rival =
-    observed !== null
-    && others.some(
-      (site) => site.viaMatrix && site.label === observed && (here ? belongs(site) : true),
-    );
+  if (here && direct) return { imageOS, note: null };
   const endpoint = !rival && (observed === m?.from || observed === m?.to);
 
-  if (mine.length) {
+  if (!here) {
+    if (endpoint) return { imageOS, note: null };
+    return {
+      imageOS: null,
+      note: rival
+        ? `These workflows ask for ${observed} by name, so this runner is not evidence about ${label}.`
+        : `This check did not run on ${label}, so its ImageOS is not evidence about the migration.`,
+    };
+  }
+
+  if (asked) {
     if (endpoint) return { imageOS, note: null };
     return {
       imageOS: null,
@@ -78,15 +79,6 @@ export function attributeImageOS({ label, imageOS, sites = [], others = [], here
           + 'by name, so this runner may be serving that leg instead.'
         : `Job "${here.job}" reaches ${label} through a matrix and ran on ${observed ?? imageOS}, `
           + 'which is neither image in the window, so this runner is treated as a different matrix leg.',
-    };
-  }
-  if (!here) {
-    if (endpoint) return { imageOS, note: null };
-    return {
-      imageOS: null,
-      note: rival
-        ? `These workflows ask for ${observed} by name, so this runner is not evidence about ${label}.`
-        : `This check did not run on ${label}, so its ImageOS is not evidence about the migration.`,
     };
   }
   return {

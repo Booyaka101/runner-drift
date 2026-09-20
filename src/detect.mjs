@@ -118,12 +118,12 @@ export function commandsInScript(script) {
   return [...found];
 }
 
-/** 1-indexed column of the label inside a raw scalar that may be padded or quoted. */
 /** A YAML inline comment: a `#` at the start of the line or after a space. */
 function stripComment(text) {
   return text.replace(/(^|[ \t])#[^\r\n]*$/, '$1');
 }
 
+/** 1-indexed column of the label inside a raw scalar that may be padded or quoted. */
 function labelColumn(start, raw) {
   const lead = raw.length - raw.trimStart().length;
   return start + lead + (/^['"]/.test(raw.trim()) ? 1 : 0) + 1;
@@ -272,7 +272,7 @@ function jobKeys(lines) {
     const m = lines[i].match(/^([ \t]*)([^-\s#][^:\r\n]*):/);
     if (m) {
       const indent = m[1].length;
-      const key = m[2].trim();
+      const key = m[2].trim().replace(/^(['"])(.*)\1$/, '$2');
       if (jobsIndent === null) {
         // Top level only: `on.workflow_dispatch.inputs.jobs` is not the map.
         if (key === 'jobs' && indent === 0) jobsIndent = indent;
@@ -359,6 +359,29 @@ export function jobMatcher(here, sites = []) {
     );
   const at = known ? here : { ...here, file: null };
   return (site) => siteInJob(site, at);
+}
+
+/**
+ * Who asked for `label` here, and whether a matrix leg asks for `observed` too.
+ *
+ * `scoped` is whether a running job was identified at all; without one every
+ * site in the repository is in scope and the caller has to decide how much that
+ * is worth. `direct` is a plain `runs-on: <label>`, `asked` includes reaching
+ * the label through a matrix, and `rival` is a matrix leg naming `observed`,
+ * which the runner is as likely to be serving as the floating one.
+ */
+export function labelOwnership({ label, observed = null, sites = [], others = [], here = null }) {
+  const belongs = jobMatcher(here, [...sites, ...others]);
+  const inScope = here ? belongs : () => true;
+  const mine = sites.filter((site) => site.label === label && inScope(site));
+  return {
+    scoped: Boolean(here),
+    direct: mine.some((site) => !site.viaMatrix),
+    asked: mine.length > 0,
+    rival:
+      observed !== null
+      && others.some((site) => site.viaMatrix && site.label === observed && inScope(site)),
+  };
 }
 
 /** Is this `runs-on:` site the one the running job was scheduled from? */

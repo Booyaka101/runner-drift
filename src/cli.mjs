@@ -25,7 +25,7 @@ import {
 import { loadManifest, resolveManifestVersions } from './manifest.mjs';
 import { imageDiffs, surveyMigration } from './migration.mjs';
 import { attribute, commitWindow, attributeChanges, listManifestCommits, manifestAtSha } from './history.mjs';
-import { detect, jobMatcher, runningJob, SELF_HOSTED } from './detect.mjs';
+import { detect, labelOwnership, runningJob, SELF_HOSTED } from './detect.mjs';
 import { canonicalTool, knownTools, MANIFEST_CANDIDATES } from './tools.mjs';
 import { probeTool, isProbeable } from './probe.mjs';
 import { diffTool, shouldFail, maxSeverity } from './diff.mjs';
@@ -237,10 +237,10 @@ function summarise(io, items, keyOf, lineOf) {
  * label fallback and the drift explanation want the same directory, and reading
  * it five times to get the same answer is five times the IO for nothing.
  */
-function scanner(opts) {
-  const dir = opts.workflows ?? path.join('.github', 'workflows');
+/** Run `fn` at most once, however many lanes ask for its answer. */
+function once(fn) {
   let pending = null;
-  return () => (pending ??= detect(dir));
+  return () => (pending ??= fn());
 }
 
 /**
@@ -344,18 +344,16 @@ async function explainDrift({ migration, lock, label, scan, env }) {
   const m = migrationBetween(lock.label, label);
   if (!m) return null;
   const scanned = await scan();
-  const sites = scanned.floatingSites;
-  const others = scanned.labelSites;
-  const here = runningJob(env);
-  const belongs = here ? jobMatcher(here, [...sites, ...others]) : null;
-  const ours = sites.filter((site) => site.label === m.label && (!belongs || belongs(site)));
-
-  // A matrix that asks for this runner's own label by name: the job may simply
-  // have been scheduled onto that leg, and then nothing moved.
-  const rival = others.some(
-    (site) => site.viaMatrix && site.label === label && (!belongs || belongs(site)),
-  );
-  return ours.some((site) => !site.viaMatrix) || (ours.length > 0 && !rival) ? m : null;
+  // `label` is this runner's own: a matrix leg naming it is a pin the repo
+  // chose, not the window moving the job, so the explanation is withheld.
+  const { direct, asked, rival } = labelOwnership({
+    label: m.label,
+    observed: label,
+    sites: scanned.floatingSites,
+    others: scanned.labelSites,
+    here: runningJob(env),
+  });
+  return direct || (asked && !rival) ? m : null;
 }
 
 /** One stderr line per floating label whose migration fails the gate. */
@@ -559,10 +557,13 @@ async function checkOwnRunner(opts, io, env, deps, window) {
 
 export async function runGuard(opts, io = process, env = process.env, deps = {}) {
   const lockFile = opts['lock-file'] ?? DEFAULT_LOCK_FILE;
-  const scan = scanner(opts);
-  // Read before the lanes run: the migration lane diffs the tools the lock
-  // watches, which is not always what the workflow files mention.
-  const lock = await readLock(lockFile);
+  const scan = once(() => detect(opts.workflows ?? path.join('.github', 'workflows')));
+  // The migration lane diffs the tools the lock watches, which is not always
+  // what the workflow files mention. It reads the lock leniently: a lock this
+  // version cannot parse is an error for the drift lane below, which is the
+  // only lane that cannot work without it, and only once there is an image to
+  // diff at all.
+  const getLock = once(() => readLock(lockFile));
   // Writing the lock is the default; `main` resolves --no-update-lock into it,
   // but runGuard is exported and a caller building options by hand has neither.
   const updateLock = opts['update-lock'] !== false;
@@ -594,7 +595,8 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   // two images right now" and "this job ran on the new one".
   let migration = null;
   if (opts['fail-on-migration'] !== undefined) {
-    migration = await checkMigration(opts, io, deps.now ?? new Date(), imageOS, env, scan, lock, deps);
+    const known = await getLock().catch(() => null);
+    migration = await checkMigration(opts, io, deps.now ?? new Date(), imageOS, env, scan, known, deps);
     if (!migration) return EXIT_USAGE;
     if (!opts.json && migration.surveys.length) {
       out(io.stdout, migrationReport(migration.surveys));
@@ -640,6 +642,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     return retiring || migrating || own?.failing ? EXIT_DRIFT : EXIT_OK;
   }
 
+  const lock = await getLock();
   let label = (imageOS && IMAGE_OS_TO_LABEL[imageOS.toLowerCase()]) || lock?.label || null;
 
   if (!label) {

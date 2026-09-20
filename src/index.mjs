@@ -21,6 +21,7 @@ export {
   extractFloatingSites,
   extractRunsOnTargets,
   jobMatcher,
+  labelOwnership,
   runningJob,
   siteInJob,
   extractRunScripts,

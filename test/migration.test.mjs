@@ -685,6 +685,24 @@ test('--json names the explanation without --fail-on-migration too', async () =>
   assert.equal(j.migration, undefined, 'the lane itself still needs the flag');
 });
 
+test('a quoted job id is the same job GITHUB_JOB names', async () => {
+  const r = await guard(
+    {
+      tools: 'node',
+      'fail-on-migration': '0',
+      json: true,
+      workflows: path.join(FIXTURES, 'workflows-quoted-job'),
+    },
+    { ImageOS: 'ubuntu26', ...inJob('build') },
+    DURING,
+  );
+  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const s = j.migration.surveys[0];
+  assert.equal(s.observed, 'ubuntu-26.04', 'the runner is attributed to "build"');
+  assert.equal(s.state, MIGRATION_STATE.MIGRATED);
+  assert.deepEqual(s.notes, []);
+});
+
 test('a matrix leg pinned to the new image is not the migration arriving', async () => {
   // matrix: [ubuntu-latest, ubuntu-26.04]. This runner is on 26.04, which the
   // job asks for by name, so the jump from the lock is not GitHub's doing.
