@@ -233,6 +233,41 @@ test('--no-update-lock writes no lock on the first run either', async () => {
   }
 });
 
+test('the first-run summary does not claim a lock file that was not written', async () => {
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  const summaryFile = path.join(dir, 'summary.md');
+  await writeFile(summaryFile, '', 'utf8');
+  const prev = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = summaryFile;
+  try {
+    await guard({ tools: 'node', 'lock-file': lockFile, 'update-lock': false });
+    const md = await readFile(summaryFile, 'utf8');
+    assert.match(md, /Nothing written/);
+    assert.ok(!md.includes('locked in'), 'there is no file to lock anything in');
+    assert.ok(!md.includes('diff against this baseline'), 'nothing was kept to diff against');
+  } finally {
+    if (prev === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+    else process.env.GITHUB_STEP_SUMMARY = prev;
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('runGuard writes the lock by default, with no update-lock key at all', async () => {
+  // --no-update-lock is resolved into `update-lock` by main(). A caller of the
+  // exported runGuard builds its own options and has neither key.
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  const cap = captureIO();
+  try {
+    const code = await runGuard({ tools: 'node', 'lock-file': lockFile, summary: false }, cap.io, ENV);
+    assert.equal(code, EXIT_OK);
+    assert.equal((await readLock(lockFile)).label, 'ubuntu-22.04');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('--no-update-lock leaves the lock alone', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');

@@ -154,17 +154,25 @@ export function stepSummaryMarkdown({
   attribution = {},
   approximate = false,
   baseline = false,
+  written = true,
   lockFile,
 }) {
   const lines = [];
   lines.push('## runner-drift');
   lines.push('');
   if (baseline) {
+    const count = Object.keys(diffs).length || diffs.length;
     lines.push(
-      `Baseline recorded for \`${label}\` at image \`${toImage}\` — ${Object.keys(diffs).length || diffs.length} tool(s) locked in \`${lockFile}\`.`,
+      written
+        ? `Baseline recorded for \`${label}\` at image \`${toImage}\` — ${count} tool(s) locked in \`${lockFile}\`.`
+        : `Baseline observed for \`${label}\` at image \`${toImage}\` — ${count} tool(s). Nothing written: \`--no-update-lock\` is set.`,
     );
     lines.push('');
-    lines.push('The next run on a bumped image will diff against this baseline.');
+    lines.push(
+      written
+        ? 'The next run on a bumped image will diff against this baseline.'
+        : `Drop the flag to record \`${lockFile}\`, and the next run on a bumped image has something to diff against.`,
+    );
     return `${lines.join('\n')}\n`;
   }
 

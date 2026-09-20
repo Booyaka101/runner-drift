@@ -541,6 +541,9 @@ async function checkOwnRunner(opts, io, env, deps, window) {
 
 export async function runGuard(opts, io = process, env = process.env, deps = {}) {
   const lockFile = opts['lock-file'] ?? DEFAULT_LOCK_FILE;
+  // Writing the lock is the default; `main` resolves --no-update-lock into it,
+  // but runGuard is exported and a caller building options by hand has neither.
+  const updateLock = opts['update-lock'] !== false;
   const failOn = (opts['fail-on'] ?? 'none').toLowerCase();
   if (!['none', 'major', 'minor', 'any'].includes(failOn)) {
     out(io.stderr, `--fail-on must be one of: major, minor, any (got "${opts['fail-on']}")`);
@@ -701,12 +704,13 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     const baseline = { label, imageOS, imageVersion, tools: observed, updatedAt: new Date().toISOString() };
     // --no-update-lock covers the first run too. A job that asked for a report
     // and got a file it then has to decide whether to commit is a surprise.
-    const written = opts['update-lock'] ? await writeLock(baseline, lockFile) : lockPayload(baseline);
+    const written = updateLock ? await writeLock(baseline, lockFile) : lockPayload(baseline);
     const summary = stepSummaryMarkdown({
       label,
       toImage: imageVersion,
       diffs: Object.keys(observed),
       baseline: true,
+      written: updateLock,
       lockFile,
     });
     if (opts.summary) await writeStepSummary(summary);
@@ -716,7 +720,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
         JSON.stringify(
           {
             baseline: true,
-            written: opts['update-lock'],
+            written: updateLock,
             lock: written,
             ...(retirement ? { retirement } : {}),
             ...(migration ? { migration } : {}),
@@ -732,7 +736,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
       for (const [t, v] of manifestOnly) out(io.stdout, `  ${t}: ${v.versions.join(', ')} (from manifest)`);
       out(
         io.stdout,
-        opts['update-lock']
+        updateLock
           ? `Wrote ${lockFile}. Commit it so the next image bump can be diffed.`
           : `Nothing written: --no-update-lock is set. Drop it to record ${lockFile} as the baseline.`,
       );
@@ -795,7 +799,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
 
   for (const line of annotations(diffs, attributionMap, label)) out(io.stdout, line);
 
-  if (opts['update-lock']) {
+  if (updateLock) {
     await writeLock(
       { label, imageOS, imageVersion, tools: observed, updatedAt: new Date().toISOString() },
       lockFile,
@@ -804,6 +808,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
 
   if (opts.json) {
     const payload = { label, from: lock.imageVersion, to: imageVersion, approximate, diffs, attribution: attributionMap };
+    payload.explains = explained?.label ?? null;
     if (retirement) payload.retirement = retirement;
     if (migration) payload.migration = { ...migration, explains: explained?.label ?? null };
     out(io.stdout, JSON.stringify(payload, null, 2));

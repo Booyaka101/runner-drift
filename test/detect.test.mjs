@@ -6,6 +6,7 @@ import {
   analyseWorkflow,
   extractLabels,
   extractLabelSites,
+  extractFloatingSites,
   extractRunsOnTargets,
   extractRunScripts,
   commandsInScript,
@@ -156,6 +157,25 @@ test('labelSites: ${{ matrix.os }} resolves to the matrix value positions', () =
     { label: 'ubuntu-22.04', file: null, line: 5, col: 14, job: 'a', viaMatrix: true },
     { label: 'macos-14', file: null, line: 5, col: 28, job: 'a', viaMatrix: true },
   ]);
+});
+
+test('labelSites: a matrix does not make every mention of a label a site', () => {
+  const y = [
+    '# this repo moved off ubuntu-latest years ago',
+    'jobs:',
+    '  a:',
+    '    strategy:',
+    '      matrix:',
+    '        os: [ubuntu-24.04]   # not ubuntu-latest',
+    '    runs-on: ${{ matrix.os }}',
+    '    steps:',
+    '      - run: echo ubuntu-latest',
+  ].join('\n');
+  assert.deepEqual(extractFloatingSites(y), [], 'a comment is not a runs-on');
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => [s.label, s.line]),
+    [['ubuntu-24.04', 6]],
+  );
 });
 
 test('labelSites: floating labels are never a site', () => {

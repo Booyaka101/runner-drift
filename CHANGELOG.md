@@ -112,7 +112,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   there was nothing to update yet. The README said the flag leaves the lock file
   untouched, so a lint job that asked for a report got a file to decide about.
   It now writes nothing, says so, and still reports the baseline it observed;
-  `--json` gained a `written` boolean beside `baseline`.
+  `--json` gained a `written` boolean beside `baseline`, and the step summary no
+  longer says the tools were "locked in" a file that does not exist.
+
+- A workflow whose `runs-on:` is a matrix expression had every label-shaped word
+  in the file read as a runner it asks for, including the ones in comments and
+  in `run:` lines. That put retirement and migration annotations on lines nobody
+  can act on, and, once the migration lane existed, could attribute a runner's
+  image to a label the repo never uses. The scan is now scoped to the file's
+  `matrix:` blocks, with comments dropped.
 
 [1.4.0]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.4.0
 

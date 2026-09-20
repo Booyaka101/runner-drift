@@ -193,11 +193,31 @@ function scanRunsOn(lines) {
   return { found, targets, expression };
 }
 
-/** `runs-on: ${{ matrix.os }}` -> the label-shaped scalars elsewhere in the file. */
+/**
+ * `runs-on: ${{ matrix.os }}` -> the label-shaped scalars in the file's
+ * `matrix:` blocks.
+ *
+ * Scoped to those blocks, and comments dropped: a label named in a comment or a
+ * `run:` line is not a runner this workflow asks for, and an annotation has to
+ * land on a line someone can act on.
+ */
 function matrixLabels(lines) {
   const found = [];
+  let block = null;
   for (let i = 0; i < lines.length; i++) {
-    for (const tok of lines[i].matchAll(/[A-Za-z][A-Za-z0-9.-]*/g)) {
+    const open = lines[i].match(/^([ \t]*)matrix:[ \t]*(#[^\r\n]*)?$/);
+    if (open) {
+      block = open[1].length;
+      continue;
+    }
+    if (block === null) continue;
+    const text = lines[i].replace(/(^|[ \t])#[^\r\n]*$/, '$1');
+    if (!text.trim()) continue;
+    if (indentOf(text) <= block) {
+      block = null;
+      continue;
+    }
+    for (const tok of text.matchAll(/[A-Za-z][A-Za-z0-9.-]*/g)) {
       if (LABEL_SHAPE.test(tok[0])) {
         found.push({ label: tok[0].toLowerCase(), line: i + 1, col: tok.index + 1 });
       }

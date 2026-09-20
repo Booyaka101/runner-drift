@@ -645,6 +645,13 @@ test('the explanation needs no flag: the two labels alone identify the move', as
   assert.equal(r.stderr, '');
 });
 
+test('--json names the explanation without --fail-on-migration too', async () => {
+  const r = await guardAcrossTheMove({ json: true }, DURING);
+  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  assert.equal(j.explains, 'ubuntu-latest');
+  assert.equal(j.migration, undefined, 'the lane itself still needs the flag');
+});
+
 test('a repo that pins its runners is not told GitHub moved it', async () => {
   // The same 24.04 -> 26.04 jump, in a repo whose workflows never say
   // ubuntu-latest: someone bumped the pin by hand and owns the upgrade.
