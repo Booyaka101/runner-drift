@@ -61,7 +61,7 @@ export function attributeImageOS({ label, imageOS, sites = [], others = [], here
   if (!imageOS) return { imageOS: null, note: null };
   const m = migrationFor(label);
   const observed = labelForImageOS(imageOS);
-  const { direct, asked, rival, placed } = labelOwnership({ label, observed, sites, others, here });
+  const { direct, asked, rival, placed, named } = labelOwnership({ label, observed, sites, others, here });
 
   // A plain `runs-on:` in the job this run came from settles it, as long as the
   // job id picked out one job. A job a reusable workflow reports is matched on
@@ -82,7 +82,10 @@ export function attributeImageOS({ label, imageOS, sites = [], others = [], here
 
   if (asked) {
     if (endpoint) return { imageOS, note: null };
-    if (rival && !placed) {
+    // Two jobs sharing an id, rather than one job with two legs: only a plain
+    // `runs-on:` rules out a matrix, and only an unplaceable run can be in
+    // another file at all.
+    if (rival && named && !placed) {
       return {
         imageOS: null,
         note: `More than one workflow has a job called "${here.job}", and one of them asks for `

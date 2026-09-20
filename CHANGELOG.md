@@ -227,6 +227,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   rollout month, and only when run inside a job, which read as flakiness. Such a
   label now belongs to every job whose `runs-on:` is an expression.
 
+- A job that reaches the floating label through its own matrix was explained as
+  two workflows sharing a job id whenever the run could not be placed in a file,
+  which is every run with no `GITHUB_WORKFLOW_REF` and every run inside a
+  reusable workflow. Withholding the image was right, the sentence was not: a
+  namesake job now has to ask for the observed label with a plain `runs-on:`
+  before it is named as one.
+
 - Mid-migration, the drift lane attributed the change to the wrong image's
   history. A lock recorded on `ubuntu-24.04` and a runner on `ubuntu-26.04` are
   two operating systems, but guard looked the locked image version up in the

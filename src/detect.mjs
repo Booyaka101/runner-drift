@@ -450,9 +450,12 @@ export function jobMatcher(here, sites = []) {
  *
  * `scoped` is whether a running job was identified at all; without one every
  * site in the repository is in scope and the caller has to decide how much that
- * is worth. `placed` is the stronger claim that the job id picked out one job. `direct` is a plain `runs-on: <label>`, `asked` includes reaching
- * the label through a matrix, and `rival` is another site naming `observed`,
- * which the runner is as likely to be serving as the floating one.
+ * is worth. `placed` is the stronger claim that the job id picked out one job.
+ * `direct` is a plain `runs-on: <label>`, `asked` includes reaching the label
+ * through a matrix, and `rival` is another site naming `observed`, which the
+ * runner is as likely to be serving as the floating one. `named` says that
+ * rival is a plain `runs-on:` rather than a matrix leg, which is the difference
+ * between two jobs sharing an id and one job with two legs.
  *
  * Inside one job the only rival is a matrix leg, since a job has one `runs-on:`.
  * That needs the job to be pinned to a file. A job id alone can name a job in
@@ -471,6 +474,7 @@ export function labelOwnership({ label, observed = null, sites = [], others = []
     direct: mine.some((site) => !site.viaMatrix),
     asked: mine.length > 0,
     rival: observed !== null && (pinned ? rivals.some((site) => site.viaMatrix) : rivals.length > 0),
+    named: observed !== null && rivals.some((site) => !site.viaMatrix),
   };
 }
 

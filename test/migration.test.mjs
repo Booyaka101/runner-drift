@@ -744,6 +744,26 @@ test('the job id alone decides when the run came from a file the scan never saw'
   assert.equal(strict({ ...sites[0], file: 'other.yml' }), false, 'a scanned file still has to match');
 });
 
+test('one matrix job is not reported as two workflows sharing a job id', () => {
+  // The same withholding, but the repository has one file and one job in it:
+  // the rival is the other leg of this job's own matrix, not a namesake.
+  const y = [
+    'jobs:',
+    '  build:',
+    '    strategy:',
+    '      matrix:',
+    '        os: [ubuntu-latest, ubuntu-24.04]',
+    '    runs-on: ${{ matrix.os }}',
+  ].join(String.fromCharCode(10));
+  const sites = extractFloatingSites(y, 'reusable.yml');
+  const others = extractLabelSites(y, 'reusable.yml');
+  const here = { job: 'build', file: 'caller.yml' };
+  const a = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu24', sites, others, here });
+  assert.equal(a.imageOS, null, 'the runner may be the 24.04 leg');
+  assert.doesNotMatch(a.note, /More than one workflow/);
+  assert.match(a.note, /reaches ubuntu-latest through a matrix/);
+});
+
 test('a job id the run cannot be placed by does not speak for another file', () => {
   // The run came from a reusable workflow, so GITHUB_WORKFLOW_REF names a file
   // the scan does not hold and only the job id is left to match on. Two files
