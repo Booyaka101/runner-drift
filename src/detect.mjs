@@ -375,12 +375,18 @@ function labelSitesWhere(walk, file, keep) {
   const { found, expression, matrix, targets, jobs } = walk;
   const jobOf = (line) => jobs[line - 1] ?? null;
 
+  // The matrix fallback is a whole-file token scan, so it only says which job a
+  // label sits in, not which job could be scheduled by it. A job whose own
+  // `runs-on:` is a plain label is scheduled by that label and nothing else, and
+  // a label-shaped `env:` value under it is not a runner it asks for.
+  const asks = expression
+    ? new Set(targets.filter((t) => t.expression).map((t) => jobOf(t.line)))
+    : new Set();
+
   // A label an expression resolves to need not sit in the jobs map at all: a
   // `workflow_call` input default and a top-level `env:` value both live above
   // it. The jobs it can serve are the ones whose `runs-on:` is an expression.
-  const viaExpression = expression
-    ? [...new Set(targets.filter((t) => t.expression).map((t) => jobOf(t.line)))].filter(Boolean)
-    : [];
+  const viaExpression = [...asks].filter(Boolean);
 
   const seen = new Set();
   const sites = [];
@@ -389,8 +395,9 @@ function labelSitesWhere(walk, file, keep) {
     if (!keep(label)) continue;
     const key = `${label}@${line}:${col}`;
     if (seen.has(key)) continue;
-    seen.add(key);
     const job = jobOf(line);
+    if (viaMatrix && job !== null && !asks.has(job)) continue;
+    seen.add(key);
     const site = { label, file, line, col, job };
     if (viaMatrix) site.viaMatrix = true;
     // One annotation per position, so the jobs a label off the map can serve

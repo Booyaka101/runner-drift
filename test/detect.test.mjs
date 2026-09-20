@@ -399,6 +399,32 @@ test('a matrix dimension named after a prose key is still values', () => {
   assert.deepEqual(extractFloatingSites(y), [], 'the step title is still prose');
 });
 
+test('a job with a plain runs-on gets no labels from the matrix fallback', () => {
+  // The fallback is a token scan over the whole file, so one matrix job used to
+  // turn every label-shaped value in every other job into a runner it asks for.
+  const y = [
+    'jobs:',
+    '  test:',
+    '    strategy:',
+    '      matrix:',
+    '        os: [ubuntu-22.04]',
+    '    runs-on: ${{ matrix.os }}',
+    '  guard:',
+    '    runs-on: ubuntu-latest',
+    '    env:',
+    '      TARGET_IMAGE: ubuntu-26.04',
+  ].join(String.fromCharCode(10));
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => [s.label, s.job]),
+    [['ubuntu-22.04', 'test']],
+    'the env value is not a runner the guard job asks for',
+  );
+  assert.deepEqual(
+    extractFloatingSites(y).map((s) => [s.label, s.job, s.viaMatrix]),
+    [['ubuntu-latest', 'guard', undefined]],
+  );
+});
+
 test('one label line is one site, however many jobs the expression serves', () => {
   // Three jobs sharing an input default used to mean three identical
   // annotations on the same line.

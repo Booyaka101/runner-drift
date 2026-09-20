@@ -744,6 +744,31 @@ test('the job id alone decides when the run came from a file the scan never saw'
   assert.equal(strict({ ...sites[0], file: 'other.yml' }), false, 'a scanned file still has to match');
 });
 
+test('a matrix in a sibling job does not overrule this one plain runs-on', async () => {
+  // ci.yml has a matrix job and a guard job pinned to ubuntu-latest whose env
+  // names ubuntu-26.04. The token scan used to read that env value as a runner
+  // the guard job asks for, and treat this runner as that leg.
+  const r = await guard(
+    {
+      tools: 'node',
+      'fail-on-migration': '30',
+      json: true,
+      workflows: path.join(FIXTURES, 'workflows-matrix-sibling'),
+    },
+    {
+      ImageOS: 'ubuntu26',
+      GITHUB_JOB: 'guard',
+      GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/ci.yml@refs/heads/main',
+    },
+    DURING,
+  );
+  const s = jsonOf(r.stdout).migration.surveys[0];
+  assert.equal(s.observed, 'ubuntu-26.04');
+  assert.equal(s.state, MIGRATION_STATE.MIGRATED);
+  assert.deepEqual(s.notes, []);
+  assert.equal(r.code, EXIT_OK, 'a runner that has already moved is green');
+});
+
 test('one matrix job is not reported as two workflows sharing a job id', () => {
   // The same withholding, but the repository has one file and one job in it:
   // the rival is the other leg of this job's own matrix, not a namesake.

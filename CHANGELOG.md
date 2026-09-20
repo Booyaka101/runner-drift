@@ -205,6 +205,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   explanation, exactly as it does when there is no job id at all, and says so
   rather than reporting the label as migrated.
 
+- One matrix job let every label-shaped value in the file speak for the job it
+  sat in. The fallback is a token scan, so a sibling job pinned to
+  `runs-on: ubuntu-latest` with an `env:` naming `ubuntu-26.04` looked like a job
+  reaching the floating label through a matrix with a rival leg: the runner's own
+  image was discarded and `--fail-on-migration` failed a runner that had already
+  moved. A job whose `runs-on:` is a plain label is scheduled by that label and
+  takes nothing from the fallback. The retirement lane stops annotating those
+  `env:` values as pinned images too.
+
 - A matrix axis called `name`, `run` or `if` was read as prose and dropped, so a
   `runs-on: ${{ matrix.name }}` over image labels found nothing. Under `matrix:`
   every key is a dimension the job varies over, and the prose keys only hold
