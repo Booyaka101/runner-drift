@@ -159,6 +159,21 @@ test('labelSites: ${{ matrix.os }} resolves to the matrix value positions', () =
   ]);
 });
 
+test('a flow-mapping matrix is read like a block one', () => {
+  const y = [
+    'jobs:',
+    '  a:',
+    '    strategy:',
+    '      matrix: {os: [ubuntu-latest, ubuntu-22.04]}',
+    '    runs-on: ${{ matrix.os }}',
+  ].join('\n');
+  assert.deepEqual(extractLabels(y).sort(), ['ubuntu-22.04', 'ubuntu-latest']);
+  assert.deepEqual(
+    extractFloatingSites(y).map((s) => [s.label, s.line, s.job]),
+    [['ubuntu-latest', 4, 'a']],
+  );
+});
+
 test('labelSites: a matrix does not make every mention of a label a site', () => {
   const y = [
     '# this repo moved off ubuntu-latest years ago',

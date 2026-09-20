@@ -212,7 +212,8 @@ export function parseManifest(markdown, label = null) {
     // its own delimiter and there is no failure condition to backtrack over.
     const headerM = line.match(/^[ \t]*-[ \t]+([^:\r\n]+):[ \t]*([^\r\n]+)/);
     if (headerM) {
-      const field = HEADER_FIELDS[headerM[1].trim().toLowerCase()];
+      const key = headerM[1].trim().toLowerCase();
+      const field = Object.hasOwn(HEADER_FIELDS, key) ? HEADER_FIELDS[key] : null;
       if (field) {
         header[field] ??= headerM[2].trim();
         continue;

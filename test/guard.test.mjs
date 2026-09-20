@@ -173,6 +173,20 @@ test('zero tools and no lock tells the user to pass --tools', async () => {
   }
 });
 
+test('--json off a hosted runner still prints the retirement document', async () => {
+  const r = await guard(
+    {
+      tools: 'node',
+      json: true,
+      'fail-on-retirement': '365',
+      workflows: path.join(FIXTURES, 'workflows-retirement'),
+    },
+    {},
+  );
+  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  assert.ok(j.retirement.findings.length, 'the lane ran, so its findings are in the document');
+});
+
 test('guard writes a markdown table to $GITHUB_STEP_SUMMARY', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');
@@ -225,7 +239,8 @@ test('--no-update-lock writes no lock on the first run either', async () => {
   try {
     const r = await guard({ tools: 'node', 'lock-file': lockFile, 'update-lock': false });
     assert.equal(r.code, EXIT_OK);
-    assert.match(r.stdout, /baseline recorded/);
+    assert.match(r.stdout, /baseline observed/);
+    assert.ok(!r.stdout.includes('baseline recorded'), 'nothing was recorded anywhere');
     assert.match(r.stdout, /Nothing written: --no-update-lock is set/);
     await assert.rejects(() => readFile(lockFile, 'utf8'), /ENOENT/);
   } finally {

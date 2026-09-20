@@ -203,25 +203,31 @@ function scanRunsOn(lines) {
  */
 function matrixLabels(lines) {
   const found = [];
-  let block = null;
-  for (let i = 0; i < lines.length; i++) {
-    const open = lines[i].match(/^([ \t]*)matrix:[ \t]*(#[^\r\n]*)?$/);
-    if (open) {
-      block = open[1].length;
-      continue;
-    }
-    if (block === null) continue;
-    const text = lines[i].replace(/(^|[ \t])#[^\r\n]*$/, '$1');
-    if (!text.trim()) continue;
-    if (indentOf(text) <= block) {
-      block = null;
-      continue;
-    }
+  const collect = (text, i) => {
     for (const tok of text.matchAll(/[A-Za-z][A-Za-z0-9.-]*/g)) {
       if (LABEL_SHAPE.test(tok[0])) {
         found.push({ label: tok[0].toLowerCase(), line: i + 1, col: tok.index + 1 });
       }
     }
+  };
+  let block = null;
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i].replace(/(^|[ \t])#[^\r\n]*$/, '$1');
+    const open = text.match(/^([ \t]*)matrix:/);
+    if (open) {
+      // A flow mapping puts the labels on the `matrix:` line itself; the block
+      // stays open either way, since the mapping may run onto further lines.
+      block = open[1].length;
+      collect(text, i);
+      continue;
+    }
+    if (block === null) continue;
+    if (!text.trim()) continue;
+    if (indentOf(text) <= block) {
+      block = null;
+      continue;
+    }
+    collect(text, i);
   }
   return found;
 }

@@ -605,7 +605,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     // version with a date on it. Without a token this is a no-op and the skip
     // above is the whole output, exactly as in 1.1.0.
     const own = await checkOwnRunner(opts, io, env, deps, window);
-    if (opts.json && (own || migration)) {
+    if (opts.json && (own || migration || retirement)) {
       const payload = {};
       if (own) payload.runners = own;
       if (retirement) payload.retirement = retirement;
@@ -730,7 +730,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
         ),
       );
     } else {
-      out(io.stdout, `baseline recorded — ${label} image ${imageVersion}`);
+      out(io.stdout, `baseline ${updateLock ? 'recorded' : 'observed'} — ${label} image ${imageVersion}`);
       for (const n of probeNotes) out(io.stdout, `  ${n}`);
       const manifestOnly = Object.entries(observed).filter(([, v]) => v.source === 'manifest');
       for (const [t, v] of manifestOnly) out(io.stdout, `  ${t}: ${v.versions.join(', ')} (from manifest)`);
