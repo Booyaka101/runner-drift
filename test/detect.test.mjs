@@ -122,25 +122,25 @@ test('an empty or non-workflow document yields nothing', () => {
 
 test('labelSites: an inline scalar points at the label text, 1-indexed', () => {
   const sites = extractLabelSites('jobs:\n  a:\n    runs-on: ubuntu-22.04\n');
-  assert.deepEqual(sites, [{ label: 'ubuntu-22.04', file: null, line: 3, col: 14 }]);
+  assert.deepEqual(sites, [{ label: 'ubuntu-22.04', file: null, line: 3, col: 14, job: 'a' }]);
 });
 
 test('labelSites: a quoted scalar points inside the quotes', () => {
   const sites = extractLabelSites("jobs:\n  a:\n    runs-on: 'macos-14'\n");
-  assert.deepEqual(sites, [{ label: 'macos-14', file: null, line: 3, col: 15 }]);
+  assert.deepEqual(sites, [{ label: 'macos-14', file: null, line: 3, col: 15, job: 'a' }]);
 });
 
 test('labelSites: flow-sequence items get their own columns, self-hosted none', () => {
   const sites = extractLabelSites('    runs-on: [self-hosted, linux, x64]\n');
   assert.deepEqual(sites, [
-    { label: 'linux', file: null, line: 1, col: 28 },
-    { label: 'x64', file: null, line: 1, col: 35 },
+    { label: 'linux', file: null, line: 1, col: 28, job: null },
+    { label: 'x64', file: null, line: 1, col: 35, job: null },
   ]);
 });
 
 test('labelSites: block-sequence items carry their own line and column', () => {
   const y = 'jobs:\n  a:\n    runs-on:\n      - self-hosted\n      - macos-14\n    steps: []\n';
-  assert.deepEqual(extractLabelSites(y), [{ label: 'macos-14', file: null, line: 5, col: 9 }]);
+  assert.deepEqual(extractLabelSites(y), [{ label: 'macos-14', file: null, line: 5, col: 9, job: 'a' }]);
 });
 
 test('labelSites: ${{ matrix.os }} resolves to the matrix value positions', () => {
@@ -153,8 +153,8 @@ test('labelSites: ${{ matrix.os }} resolves to the matrix value positions', () =
     '    runs-on: ${{ matrix.os }}',
   ].join('\n');
   assert.deepEqual(extractLabelSites(y), [
-    { label: 'ubuntu-22.04', file: null, line: 5, col: 14 },
-    { label: 'macos-14', file: null, line: 5, col: 28 },
+    { label: 'ubuntu-22.04', file: null, line: 5, col: 14, job: 'a', viaMatrix: true },
+    { label: 'macos-14', file: null, line: 5, col: 28, job: 'a', viaMatrix: true },
   ]);
 });
 

@@ -12,7 +12,7 @@ import {
   migrationFor,
   migrationStatus,
 } from '../src/labels.mjs';
-import { imageDiffs, surveyMigration } from '../src/migration.mjs';
+import { attributeImageOS, imageDiffs, surveyMigration } from '../src/migration.mjs';
 import { migrationAnnotations, migrationLines, migrationSummaryMarkdown } from '../src/report.mjs';
 import { detect, extractFloatingSites } from '../src/detect.mjs';
 import { writeLock } from '../src/lock.mjs';
@@ -175,6 +175,17 @@ test('the window boundaries belong to the window', () => {
   assert.equal(on('2026-11-20'), MIGRATION_PHASE.SETTLED);
 });
 
+test('the phase holds all day, at every hour of a boundary date', () => {
+  for (const hour of ['00:00', '11:59', '12:00', '13:00', '23:59']) {
+    const at = (d) => migrationStatus('ubuntu-latest', { now: new Date(`${d}T${hour}:00Z`) });
+    assert.equal(at('2026-10-18').phase, MIGRATION_PHASE.PENDING, `2026-10-18 ${hour}`);
+    assert.equal(at('2026-10-19').phase, MIGRATION_PHASE.IN_WINDOW, `2026-10-19 ${hour}`);
+    assert.equal(at('2026-11-19').phase, MIGRATION_PHASE.IN_WINDOW, `2026-11-19 ${hour}`);
+    assert.equal(at('2026-11-19').daysToEnd, 0, `countdown on the last day, ${hour}`);
+    assert.equal(at('2026-11-20').phase, MIGRATION_PHASE.SETTLED, `2026-11-20 ${hour}`);
+  }
+});
+
 /* --------------------------------------------------------- migrationFails */
 
 test('the gate fires inside the threshold, in the window, and on an anomaly', () => {
@@ -295,7 +306,7 @@ test('each state gets its own sentence, and the anomaly says so', async () => {
   );
   assert.match(sentence(DURING, 'ubuntu24'), /this runner served ubuntu-24\.04/);
   assert.match(sentence(DURING, 'ubuntu26'), /has reached this runner/);
-  assert.match(sentence(DURING, null), /No ImageOS was observed/);
+  assert.match(sentence(DURING, null), /not known here/);
   assert.match(sentence(AFTER, null), /finished migrating/);
   assert.match(sentence(AFTER, 'ubuntu24'), /anomaly, not drift/);
   assert.match(sentence(AFTER, 'ubuntu22'), /neither ubuntu-24\.04 nor ubuntu-26\.04/);
@@ -346,7 +357,7 @@ test('a floating label inside a matrix is a site like any other', () => {
     '    runs-on: ${{ matrix.os }}',
   ].join('\n');
   assert.deepEqual(extractFloatingSites(y, 'ci.yml'), [
-    { label: 'ubuntu-latest', file: 'ci.yml', line: 5, col: 28 },
+    { label: 'ubuntu-latest', file: 'ci.yml', line: 5, col: 28, job: 'a', viaMatrix: true },
   ]);
 });
 
@@ -492,6 +503,72 @@ test('the migration ride-along appears in guard --json', async () => {
   assert.equal(j.migration.surveys[0].sites[0].line, 6);
 });
 
+/* ------------------------------------------------ whose image is this? */
+
+// The fixture has three jobs: build on ubuntu-latest, pinned on ubuntu-24.04,
+// lint on ubuntu-22.04. A runner exports these two for the job it is serving.
+const inJob = (job) => ({
+  GITHUB_JOB: job,
+  GITHUB_WORKFLOW_REF: 'o/r/.github/workflows/latest.yml@refs/heads/main',
+});
+
+test('a guard step on an unrelated image says nothing about the floating label', async () => {
+  const r = await guard(
+    { tools: 'node', 'fail-on-migration': '0', json: true },
+    { ImageOS: 'ubuntu22', ...inJob('lint') },
+    BEFORE,
+  );
+  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  const s = j.migration.surveys[0];
+  assert.equal(s.state, MIGRATION_STATE.PENDING, 'the lint runner is not evidence');
+  assert.equal(s.observed, null);
+  assert.match(s.notes[0], /did not run on ubuntu-latest/);
+  assert.equal(r.code, EXIT_OK, 'another job image is not an anomaly');
+  assert.ok(!r.stdout.includes('::error'), 'nothing to raise');
+});
+
+test('the job that does ask for the label owns the image it ran on', async () => {
+  const r = await guard(
+    { tools: 'node', 'fail-on-migration': '0', json: true },
+    { ImageOS: 'ubuntu22', ...inJob('build') },
+    BEFORE,
+  );
+  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  assert.equal(j.migration.surveys[0].state, MIGRATION_STATE.UNEXPECTED);
+  assert.deepEqual(j.migration.surveys[0].notes, []);
+  assert.equal(r.code, EXIT_DRIFT, 'ubuntu-latest serving 22.04 is a real anomaly');
+});
+
+test('mid-window, the job on the floating label still reads as migrated', async () => {
+  const r = await guard(
+    { tools: 'node', 'fail-on-migration': '30', json: true },
+    { ImageOS: 'ubuntu26', ...inJob('build') },
+    DURING,
+  );
+  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  assert.equal(j.migration.surveys[0].state, MIGRATION_STATE.MIGRATED);
+  assert.equal(j.migration.surveys[0].observed, 'ubuntu-26.04');
+});
+
+test('a matrix leg is trusted for the two images in the window and no others', () => {
+  const site = { label: 'ubuntu-latest', file: 'ci.yml', line: 5, col: 28, job: 'a', viaMatrix: true };
+  const here = { job: 'a', file: 'ci.yml' };
+  assert.equal(attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu26', sites: [site], here }).imageOS, 'ubuntu26');
+  const off = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu22', sites: [site], here });
+  assert.equal(off.imageOS, null, 'this runner is serving another leg');
+  assert.match(off.note, /through a matrix/);
+});
+
+test('with no GITHUB_JOB the window images are still attributed', () => {
+  const sites = [{ label: 'ubuntu-latest', file: 'ci.yml', line: 6, col: 14, job: 'build' }];
+  const a = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu24', sites, here: null });
+  assert.equal(a.imageOS, 'ubuntu24');
+  assert.equal(a.note, null);
+  const b = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu22', sites, here: null });
+  assert.equal(b.imageOS, null);
+  assert.match(b.note, /This check did not run on ubuntu-latest/);
+});
+
 /**
  * Guard against a lock recorded on the pre-migration image, with the runner
  * serving the post-migration one: the drift a real user sees mid-rollout.
@@ -509,9 +586,10 @@ async function guardAcrossTheMove(opts, now, locked = { label: 'ubuntu-24.04', i
       },
       lockFile,
     );
+    const { env = {}, ...rest } = opts;
     return await guard(
-      { tools: 'node', 'lock-file': lockFile, 'update-lock': false, ...opts },
-      { ImageVersion: IMAGE, ImageOS: 'ubuntu26' },
+      { tools: 'node', 'lock-file': lockFile, 'update-lock': false, ...rest },
+      { ImageVersion: IMAGE, ImageOS: 'ubuntu26', ...env },
       now,
     );
   } finally {
@@ -541,6 +619,21 @@ test('the explanation needs no flag: the two labels alone identify the move', as
   // Without --fail-on-migration the lane itself stays quiet: no window, no diff.
   assert.ok(!r.stdout.includes('rollout'), 'no migration report without the flag');
   assert.equal(r.stderr, '');
+});
+
+test('a repo that pins its runners is not told GitHub moved it', async () => {
+  // The same 24.04 -> 26.04 jump, in a repo whose workflows never say
+  // ubuntu-latest: someone bumped the pin by hand and owns the upgrade.
+  const r = await guardAcrossTheMove({ workflows: path.join(FIXTURES, 'workflows') }, DURING);
+  assert.ok(!r.stdout.includes('Explained by'), 'no floating label, no migration to blame');
+  assert.match(r.stdout, /Node\.js 22\.23\.2 -> /, 'the drift is still reported');
+});
+
+test('the explanation follows the job, not the repo, when Actions says which job', async () => {
+  const mine = await guardAcrossTheMove({ env: inJob('build') }, DURING);
+  assert.match(mine.stdout, /Explained by the scheduled ubuntu-latest migration/);
+  const theirs = await guardAcrossTheMove({ env: inJob('pinned') }, DURING);
+  assert.ok(!theirs.stdout.includes('Explained by'), 'the pinned job was not moved by the window');
 });
 
 test('a jump the migration table does not describe is left unexplained', async () => {

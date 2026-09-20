@@ -266,7 +266,7 @@ window, and on the `ImageOS` the runner exported:
 | Before the window | — | `::notice`, the window and the countdown |
 | In the window | the old image | `::warning`, this runner has not moved yet and the diff is still ahead of you |
 | In the window | the new image | `::notice`, the migration has reached this runner |
-| In the window | absent | `::warning`, which of the two this job got cannot be told |
+| In the window | absent, or from another job | `::warning`, which of the two this job got cannot be told |
 | After the window | the new image | `::notice`, the move is done |
 | After the window | the old image | `::error`, an anomaly rather than drift |
 
@@ -274,9 +274,22 @@ The last row is the one worth having. A runner still serving Ubuntu 24.04 in
 December, when the label is supposed to mean 26.04 everywhere, is not a version
 bump you should record in the lock file.
 
-One part of this needs no input at all. When `guard` finds real tool drift and the
-jump from the lock's image to the runner's image is exactly an announced move, it
-says so, because that is a table lookup rather than a check you have to opt into:
+`ImageOS` describes the runner the step is on, and that runner is serving one
+job, so it counts as evidence about `ubuntu-latest` only when that job asked for
+`ubuntu-latest`. The step above did. A lint job pinned to `ubuntu-22.04` in the
+same repo gets the window from the calendar and a line saying its own image was
+not treated as evidence, rather than a claim that `ubuntu-latest` has gone
+somewhere unrecognised. `GITHUB_JOB` and `GITHUB_WORKFLOW_REF` are what tie the
+runner to a `runs-on:` line, and Actions sets both for you. Where the label is
+reached through a matrix, or the command runs with no `GITHUB_JOB` at all, the
+image is still attributed if it is one of the two the window names.
+
+One part of this needs no input at all. When `guard` finds real tool drift, the
+jump from the lock's image to the runner's image is exactly an announced move,
+and the job was scheduled from the floating label, it says so, because that is a
+table lookup rather than a check you have to opt into. Bump a pinned label from
+`ubuntu-24.04` to `ubuntu-26.04` yourself and you get the drift report without
+the explanation, which is the honest answer: that upgrade was yours.
 
 ```
 ubuntu-26.04 image 20260907.300.1 -> 20260907.131.1
@@ -319,7 +332,7 @@ live API returned that day, and they will have moved since:
 $ runner-drift runners --org acme --fail-on-deprecation 30
 self-hosted runners — acme (3 runners, 2 versions)
   RUNTIME-DUE   2.335.1  x2  arc-linux-1, arc-linux-2
-                runtime support ends 2026-09-24 (16 days) — jobs stop being queued
+                runtime support ends 2026-09-24 (15 days) — jobs stop being queued
                 update to 2.337.0, published 2026-08-26 — the newest stable actions/runner release
                 ephemeral runners — change the actions-runner-controller image tag, not the host
   OK            2.337.0  x1  build-mac-1  (published 2026-08-26)
@@ -328,7 +341,7 @@ note: self-hosted runners auto-update by default — at risk are the ones regist
 note: enforcement covers github.com and GitHub Enterprise Cloud, not GitHub Enterprise Server
 source: GET /orgs/acme/actions/runners/deprecations/2.335.1
 source: GET /orgs/acme/actions/runners/deprecations/2.337.0
-runner-drift: 2 self-hosted runner(s) on 2.335.1 lose runtime support on 2026-09-24 (16 days) and --fail-on-deprecation 30 is set.
+runner-drift: 2 self-hosted runner(s) on 2.335.1 lose runtime support on 2026-09-24 (15 days) and --fail-on-deprecation 30 is set.
 ```
 
 That last line goes to stderr and the run exits 1, with an `::error` annotation
@@ -381,7 +394,7 @@ happens to sit next to a GPU box on the same version.
 
 ```
   RUNTIME-DUE   2.335.1  x2  arc-linux-1, arc-linux-2
-                runtime support ends 2026-09-24 (16 days) — jobs stop being queued
+                runtime support ends 2026-09-24 (15 days) — jobs stop being queued
                 update to 2.337.0, published 2026-08-26 — the newest stable actions/runner release
                 serves .github/workflows/bench.yml:9 (runs-on: self-hosted, linux, gpu) — arc-linux-1, arc-linux-2
                 ephemeral runners — change the actions-runner-controller image tag, not the host
@@ -630,7 +643,7 @@ refusal `groups` is empty and `message` / `hint` carry the reason; on success
       "ephemeral": true,
       "labels": ["self-hosted", "Linux", "X64", "gpu"],
       "status": "RUNTIME-DUE",
-      "runtime": { "at": "2026-09-24T15:30:55Z", "date": "2026-09-24", "days": 16, "past": false },
+      "runtime": { "at": "2026-09-24T15:30:55Z", "date": "2026-09-24", "days": 15, "past": false },
       "registration": null,
       "unknownVersion": false,
       "unparsedDates": [],

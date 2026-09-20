@@ -25,7 +25,7 @@ import {
 import { loadManifest, resolveManifestVersions } from './manifest.mjs';
 import { imageDiffs, surveyMigration } from './migration.mjs';
 import { attribute, commitWindow, attributeChanges, listManifestCommits, manifestAtSha } from './history.mjs';
-import { detect, SELF_HOSTED } from './detect.mjs';
+import { detect, runningJob, siteInJob, SELF_HOSTED } from './detect.mjs';
 import { canonicalTool, knownTools, MANIFEST_CANDIDATES } from './tools.mjs';
 import { probeTool, isProbeable } from './probe.mjs';
 import { diffTool, shouldFail, maxSeverity } from './diff.mjs';
@@ -283,7 +283,7 @@ function reportRetirement(io, { days, findings }) {
  * images it names. Opt-in like the retirement gate, and like it, useful in a
  * plain lint job with no runner and no lock file.
  */
-async function checkMigration(opts, io, now, imageOS, deps) {
+async function checkMigration(opts, io, now, imageOS, env, deps) {
   const days = wholeDays(opts['fail-on-migration'], '--fail-on-migration', io);
   if (days === null) return null;
   const scanned = await scanForLane(opts, io, 'no floating labels to check for migration');
@@ -297,9 +297,10 @@ async function checkMigration(opts, io, now, imageOS, deps) {
   }
   const tools = parseToolList(opts.tools) ?? scanned.tools;
   const load = deps.loadManifest ?? loadManifest;
+  const here = runningJob(env);
   const surveys = await Promise.all(
     [...byLabel].map(([label, sites]) =>
-      surveyMigration({ label, now, imageOS, tools, sites, load }),
+      surveyMigration({ label, now, imageOS, tools, sites, here, load }),
     ),
   );
 
@@ -308,6 +309,35 @@ async function checkMigration(opts, io, now, imageOS, deps) {
     await writeStepSummary(migrationSummaryMarkdown(surveys));
   }
   return { days, surveys };
+}
+
+/**
+ * The announced migration that explains a lock-to-runner jump, or null.
+ *
+ * Only a job scheduled from the floating label can have been moved by the
+ * window: a repo that pins its runner and bumps the pin by hand did its own
+ * upgrade, and being told GitHub did it is worse than being told nothing. With
+ * no `GITHUB_JOB` to match on, the label appearing anywhere in the workflows is
+ * taken as enough.
+ *
+ * The scan only happens for a jump the table already recognises, which is rare,
+ * so the common path still reads no workflow files it did not need.
+ */
+async function explainDrift({ migration, lock, label, opts, env }) {
+  const survey = migration?.surveys.find(
+    (s) => s.done && s.observed === s.to && lock.label === s.from && label === s.to,
+  );
+  if (survey) return survey;
+
+  const m = migrationBetween(lock.label, label);
+  if (!m) return null;
+  const sites = migration
+    ? migration.surveys.flatMap((s) => s.sites)
+    : (await detect(opts.workflows ?? path.join('.github', 'workflows'))).floatingSites;
+  const ours = sites.filter((site) => site.label === m.label);
+  const here = runningJob(env);
+  const used = here ? ours.some((site) => siteInJob(site, here)) : ours.length > 0;
+  return used ? m : null;
 }
 
 /** One stderr line per floating label whose migration fails the gate. */
@@ -539,7 +569,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   // two images right now" and "this job ran on the new one".
   let migration = null;
   if (opts['fail-on-migration'] !== undefined) {
-    migration = await checkMigration(opts, io, deps.now ?? new Date(), imageOS, deps);
+    migration = await checkMigration(opts, io, deps.now ?? new Date(), imageOS, env, deps);
     if (!migration) return EXIT_USAGE;
     if (!opts.json && migration.surveys.length) {
       out(io.stdout, migrationReport(migration.surveys));
@@ -750,15 +780,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     }
   }
 
-  // Not unexplained drift: the lock was taken on the image the window moves
-  // away from, and this runner served the one it moves to. The table lookup is
-  // the fallback for a run without --fail-on-migration, where the lane never
-  // built a survey. The exit code is still --fail-on's to decide; this only
-  // names the cause.
-  const explained =
-    migration?.surveys.find(
-      (s) => s.done && s.observed === s.to && lock.label === s.from && label === s.to,
-    ) ?? migrationBetween(lock.label, label);
+  const explained = await explainDrift({ migration, lock, label, opts, env });
 
   const summary = stepSummaryMarkdown({
     label,

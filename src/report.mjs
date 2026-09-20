@@ -358,7 +358,7 @@ const MIGRATION_SENTENCE = {
   [MIGRATION_STATE.MIGRATED]: (s) =>
     `The scheduled ${s.label} migration has reached this runner: ${s.from} -> ${s.to}, rollout ${s.starts} to ${s.ends}.`,
   [MIGRATION_STATE.AMBIGUOUS]: (s) =>
-    `${s.label} is mid-rollout from ${s.from} to ${s.to}, finishing ${dateWithCountdown(s.ends, s.daysToEnd)}. No ImageOS was observed, so which of the two this job ran on is unknown.`,
+    `${s.label} is mid-rollout from ${s.from} to ${s.to}, finishing ${dateWithCountdown(s.ends, s.daysToEnd)}. Which of the two this job ran on is not known here.`,
   [MIGRATION_STATE.SETTLED]: (s) =>
     `${s.label} finished migrating from ${s.from} to ${s.to} on ${dateWithCountdown(s.ends, s.daysToEnd)}; it now means ${s.to}.`,
   [MIGRATION_STATE.STALE]: (s) =>
@@ -422,7 +422,7 @@ export function migrationLines(survey) {
   if (survey.notOnManifest.length) {
     lines.push(`Not listed on either image manifest (skipped): ${survey.notOnManifest.join(', ')}`);
   }
-  for (const n of survey.notes) lines.push(`Manifest diff unavailable: ${n}`);
+  for (const n of survey.notes) lines.push(n);
   return lines;
 }
 

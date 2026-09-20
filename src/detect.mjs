@@ -223,22 +223,62 @@ export function extractLabels(text) {
 }
 
 /**
- * Where each `runs-on` label sits: `{label, file, line, col}` per occurrence,
- * 1-indexed, `col` on the label text so a `file=,line=,col=` annotation lands
- * on it. `keep` decides which labels are worth a site, because the two lanes
- * that want one want disjoint halves of the same walk.
+ * The job id every line belongs to, 0-indexed to match `lines`.
+ *
+ * `guard` reads one runner's image, and that image says something about a label
+ * only if the job it is running asked for that label. The job id is the one
+ * thing in the file that ties a `runs-on:` to the `GITHUB_JOB` a runner exports.
+ */
+function jobKeys(lines) {
+  const at = new Array(lines.length).fill(null);
+  let jobsIndent = null;
+  let jobIndent = null;
+  let current = null;
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].match(/^([ \t]*)([^-\s#][^:\r\n]*):/);
+    if (m) {
+      const indent = m[1].length;
+      const key = m[2].trim();
+      if (jobsIndent === null) {
+        if (key === 'jobs') jobsIndent = indent;
+      } else if (indent <= jobsIndent) {
+        current = null;
+      } else if (jobIndent === null || indent === jobIndent) {
+        jobIndent = indent;
+        current = key;
+      }
+    }
+    at[i] = current;
+  }
+  return at;
+}
+
+/**
+ * Where each `runs-on` label sits: `{label, file, line, col, job}` per
+ * occurrence, 1-indexed, `col` on the label text so a `file=,line=,col=`
+ * annotation lands on it. `keep` decides which labels are worth a site, because
+ * the two lanes that want one want disjoint halves of the same walk.
+ *
+ * `viaMatrix` marks a label read out of a matrix rather than off a `runs-on:`
+ * line. Its job is right, but which leg of the matrix any one runner is serving
+ * is not written anywhere in the file.
  */
 function labelSitesWhere(text, file, keep) {
   const lines = String(text ?? '').split(/\r?\n/);
   const { found, expression } = scanRunsOn(lines);
+  const jobs = jobKeys(lines);
   const seen = new Set();
   const sites = [];
-  for (const { label, line, col } of expression ? [...found, ...matrixLabels(lines)] : found) {
+  const all = expression
+    ? [...found, ...matrixLabels(lines).map((m) => ({ ...m, viaMatrix: true }))]
+    : found;
+  for (const { label, line, col, viaMatrix } of all) {
     if (!keep(label)) continue;
     const key = `${label}@${line}:${col}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    sites.push({ label, file, line, col });
+    const site = { label, file, line, col, job: jobs[line - 1] ?? null };
+    sites.push(viaMatrix ? { ...site, viaMatrix } : site);
   }
   return sites;
 }
@@ -251,6 +291,26 @@ export function extractLabelSites(text, file = null) {
 /** Floating labels: what the migration lane dates, and nothing else can. */
 export function extractFloatingSites(text, file = null) {
   return labelSitesWhere(text, file, isFloating);
+}
+
+/**
+ * The workflow file and job id of the job this process is running in, or null
+ * outside Actions. `GITHUB_WORKFLOW_REF` is
+ * `owner/repo/.github/workflows/ci.yml@refs/heads/main`; only the file name is
+ * kept, since the scan may have been pointed at a copy of the directory.
+ */
+export function runningJob(env = process.env) {
+  const job = env.GITHUB_JOB || null;
+  if (!job) return null;
+  const ref = env.GITHUB_WORKFLOW_REF || '';
+  return { job, file: ref ? path.basename(ref.split('@')[0]) : null };
+}
+
+/** Is this `runs-on:` site the one the running job was scheduled from? */
+export function siteInJob(site, here) {
+  if (!here || !site?.job || site.job !== here.job) return false;
+  if (!here.file || !site.file) return true;
+  return path.basename(site.file).toLowerCase() === here.file.toLowerCase();
 }
 
 /**

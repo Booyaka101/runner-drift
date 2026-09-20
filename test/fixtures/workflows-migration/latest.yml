@@ -16,3 +16,8 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - run: node --version
+
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - run: echo lint

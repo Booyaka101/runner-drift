@@ -2,7 +2,7 @@
 
 export { main, runInit, runGuard, runPlan, runRunners, runActions, resolveManifestVersions, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from './cli.mjs';
 export { parseManifest, loadManifest, manifestUrl, lookupTool } from './manifest.mjs';
-export { IMAGE_FIELDS, imageDiffs, surveyMigration } from './migration.mjs';
+export { IMAGE_FIELDS, attributeImageOS, imageDiffs, surveyMigration } from './migration.mjs';
 export {
   listManifestCommits,
   findCommitForImageVersion,
@@ -20,6 +20,8 @@ export {
   extractLabelSites,
   extractFloatingSites,
   extractRunsOnTargets,
+  runningJob,
+  siteInJob,
   extractRunScripts,
   extractUses,
   setupTools,

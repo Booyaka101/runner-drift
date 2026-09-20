@@ -11,7 +11,8 @@
  * and Node.js 22 -> 24" is something you can act on before it happens.
  */
 
-import { migrationStatus } from './labels.mjs';
+import { IMAGE_OS_TO_LABEL, migrationFor, migrationStatus } from './labels.mjs';
+import { siteInJob } from './detect.mjs';
 import { loadManifest, resolveManifestVersions } from './manifest.mjs';
 import { diffTool } from './diff.mjs';
 import { errorText } from './http.mjs';
@@ -38,6 +39,42 @@ export function imageDiffs(from, to) {
 }
 
 /**
+ * Whether this runner's `ImageOS` says anything about this label, and why not.
+ *
+ * One runner serves one job. Its image is evidence about `ubuntu-latest` only if
+ * the job it is running asked for `ubuntu-latest`; a lint job pinned to
+ * `ubuntu-22.04` that happens to scan a repo using the floating label would
+ * otherwise report the whole migration as having gone somewhere unexpected.
+ *
+ * Two weaker cases attribute anyway, but only when the image is one of the two
+ * the window names, which is evidence the runner did come from this label: a
+ * matrix leg (the file cannot say which leg this runner is), and a run with no
+ * `GITHUB_JOB` to match against (`guard` invoked outside a workflow job).
+ */
+export function attributeImageOS({ label, imageOS, sites = [], here = null }) {
+  if (!imageOS) return { imageOS: null, note: null };
+  const m = migrationFor(label);
+  const observed = IMAGE_OS_TO_LABEL[String(imageOS).toLowerCase()] ?? null;
+  const endpoint = observed === m?.from || observed === m?.to;
+  const mine = sites.filter((site) => siteInJob(site, here));
+
+  if (mine.some((site) => !site.viaMatrix)) return { imageOS, note: null };
+  if (endpoint) return { imageOS, note: null };
+  if (mine.length) {
+    return {
+      imageOS: null,
+      note: `Job "${here.job}" reaches ${label} through a matrix and ran on ${observed ?? imageOS}, `
+        + 'which is neither image in the window, so this runner is treated as a different matrix leg.',
+    };
+  }
+  const who = here ? `The job that ran this check ("${here.job}")` : 'This check';
+  return {
+    imageOS: null,
+    note: `${who} did not run on ${label}, so its ImageOS is not evidence about the migration.`,
+  };
+}
+
+/**
  * One floating label, classified and (where it helps) diffed.
  *
  * `plan` calls this for the label the user named; `guard` calls it for every
@@ -56,9 +93,11 @@ export async function surveyMigration({
   imageOS = null,
   tools = [],
   sites = [],
+  here = null,
   load = loadManifest,
 } = {}) {
-  const status = migrationStatus(label, { now, imageOS });
+  const attributed = attributeImageOS({ label, imageOS, sites, here });
+  const status = migrationStatus(label, { now, imageOS: attributed.imageOS });
   if (!status) return null;
 
   const survey = {
@@ -68,7 +107,7 @@ export async function surveyMigration({
     image: [],
     toolDiffs: [],
     notOnManifest: [],
-    notes: [],
+    notes: attributed.note ? [attributed.note] : [],
   };
 
   // Once the label already means `to`, the lock diff in `guard` is the real
@@ -80,11 +119,11 @@ export async function surveyMigration({
   try {
     [a, b] = await Promise.all([load(status.from), load(status.to)]);
   } catch (err) {
-    survey.notes.push(errorText(err));
+    survey.notes.push(`Manifest diff unavailable: ${errorText(err)}`);
     return survey;
   }
   for (const m of [a, b]) {
-    if (m.skipped) survey.notes.push(m.reason);
+    if (m.skipped) survey.notes.push(`Manifest diff unavailable: ${m.reason}`);
   }
   if (a.skipped || b.skipped) return survey;
 

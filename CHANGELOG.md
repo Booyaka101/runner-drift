@@ -57,10 +57,22 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   The anomaly fails whatever the threshold, the same rule a label already past
   its retirement date follows.
 
+  `ImageOS` describes one runner, and that runner is serving one job, so it is
+  read as evidence about a floating label only when the job it is running asked
+  for that label: `GITHUB_JOB` and `GITHUB_WORKFLOW_REF` say which job, and the
+  scan already knows which job each `runs-on:` belongs to. A lint step pinned to
+  `ubuntu-22.04` in a repo that uses `ubuntu-latest` elsewhere reports the window
+  from the calendar alone and says why, instead of announcing that
+  `ubuntu-latest` has gone somewhere unrecognised. Where the label is reached
+  through a matrix, or the check runs with no `GITHUB_JOB` at all, the image is
+  still attributed if it is one of the two the window names.
+
   When the observed image explains the tool drift `guard` just found, the report
   says so, rather than leaving a page of major bumps looking unexplained. That
-  line needs no input: a lock recorded on one side of an announced move and a
-  runner on the other is a table lookup, not a check to opt into.
+  line needs no input, only the job that was actually moved: a lock recorded on
+  one side of an announced move, a runner on the other, and a workflow that asked
+  for the floating label. A repo that bumps a pinned `ubuntu-24.04` to
+  `ubuntu-26.04` by hand is not told GitHub did it.
 
   ```
   Explained by the scheduled ubuntu-latest migration ubuntu-24.04 -> ubuntu-26.04 (2026-10-19 to 2026-11-19); the tool versions below moved with the image.
@@ -81,6 +93,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   instead of only saying "pass a concrete label".
 
 ### Changed
+
+- Every countdown is now whole calendar days from today, not hours divided by 24
+  and rounded. A deadline dated 2026-11-19 reads "0 days" for the whole of the
+  19th rather than flipping to "1 day ago" at midday, and the printed date and
+  the number beside it can no longer disagree. Some `runners` countdowns move by
+  a day: `2.335.1 runtime ends 2026-09-24` was "(16 days)" on 2026-09-09 and is
+  now "(15 days)", which is the number of days you can actually still run it.
 
 - `resolveManifestVersions` moved from `src/cli.mjs` to `src/manifest.mjs`, where
   the rest of the manifest reading lives, and is re-exported from `cli.mjs` so
