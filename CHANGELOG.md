@@ -187,6 +187,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   which reads as every locked tool having been removed. Only a read that worked
   is kept.
 
+- A refused or rate-limited attribution lookup took the manifest read down with
+  it. Pinning the manifest to the commit that shipped this exact image version
+  is an improvement on the label's current readme, not a prerequisite, but both
+  sat in one `try`, so a 403 left every manifest-only tool unobserved and the
+  diff reported each of them as REMOVED, which is MAJOR. `--fail-on major` red
+  the build over a rate limit. The readme fallback now runs whatever the API
+  did.
+
 - A job id the run could not be placed by let one workflow file speak for
   another. Inside a reusable workflow `GITHUB_WORKFLOW_REF` names the caller,
   so the job is matched on its id alone, and an id is unique in a file rather

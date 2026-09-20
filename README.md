@@ -315,10 +315,17 @@ table lookup rather than a check you have to opt into. Bump a pinned label from
 the explanation, which is the honest answer: that upgrade was yours.
 
 ```
-ubuntu-26.04 image 20260907.300.1 -> 20260907.131.1
+ubuntu-24.04 image 20260907.300.1 -> ubuntu-26.04 image 20260907.131.1
 Explained by the scheduled ubuntu-latest migration ubuntu-24.04 -> ubuntu-26.04 (2026-10-19 to 2026-11-19); the tool versions below moved with the image.
-  CMake 3.31.6 -> 4.4.3  MAJOR  [20260907.131.1] https://github.com/actions/runner-images/commit/90ebb6f508835349239c3823c663eba7af98f23d
+  CMake 3.31.6 -> 4.4.3  MAJOR
 ```
+
+Both labels are named because both images are real, and the version in the lock
+was never a version of the one you are on now. There is no commit link beside
+the tool for the same reason: no commit to `ubuntu-26.04` shipped a difference
+against `ubuntu-24.04`, so a run whose label moved attributes nothing rather
+than picking the nearest commit and calling it the cause. A bump within one
+label still gets the commit that shipped it.
 
 The step summary carries the same line, above the drift table.
 

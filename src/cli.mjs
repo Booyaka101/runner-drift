@@ -761,18 +761,27 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   const infraWarnings = [];
 
   if (needManifest.length) {
+    // Pinning the manifest to the commit that shipped this image version is an
+    // improvement on the label's current readme, not a prerequisite for it. A
+    // rate limit here used to abort the fallback too, and a tool that went
+    // unobserved is reported as REMOVED, which --fail-on major reds the build
+    // over.
     try {
       attribution0 = await attribute(label, imageVersion);
       if (attribution0?.commit) {
         approximate = attribution0.approximate;
         manifest = await manifestAtSha(label, attribution0.commit.sha);
       }
-      if (!manifest) {
-        const m = await load(label);
-        manifest = m.skipped ? null : m;
-      }
     } catch (err) {
       infraWarnings.push(errorText(err));
+    }
+    if (!manifest) {
+      try {
+        const m = await load(label);
+        manifest = m.skipped ? null : m;
+      } catch (err) {
+        infraWarnings.push(errorText(err));
+      }
     }
     if (manifest) {
       const { map, missing } = resolveManifestVersions(manifest, needManifest);

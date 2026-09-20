@@ -181,6 +181,34 @@ test('a lock from the other side of a migration is not attributed to this image 
   }
 });
 
+test('a rate-limited attribution lookup does not cost the manifest read', async () => {
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  // Every API call refused, so pinning the manifest to the commit that shipped
+  // this image cannot happen. The label's own readme is still readable.
+  const api = stubApi(() => ({ status: 403, body: '', headers: { 'x-ratelimit-remaining': '0' } }));
+  try {
+    await writeLock(
+      {
+        label: 'ubuntu-22.04',
+        imageOS: 'ubuntu22',
+        imageVersion: '20260623.199.1',
+        tools: { Bazel: { versions: ['9.1.0'], source: 'manifest' } },
+      },
+      lockFile,
+    );
+    const r = await guard({ tools: 'Bazel', 'lock-file': lockFile, 'update-lock': false }, ENV, {
+      loadManifest: fixtureLoader(),
+    });
+    assert.equal(r.code, EXIT_OK);
+    assert.match(r.stdout, /Bazel 9\.1\.0 -> 9\.2\.0/, 'read off the readme, not reported as removed');
+    assert.doesNotMatch(r.stdout, /REMOVED/);
+  } finally {
+    api.restore();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('exit code 1 only under --fail-on major (and above)', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');
