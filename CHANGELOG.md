@@ -87,6 +87,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the public surface is unchanged. The migration lane needed it and importing it
   from the CLI would have made a cycle.
 
+### Fixed
+
+- `guard --no-update-lock` wrote the lock file anyway on the very first run, when
+  there was nothing to update yet. The README said the flag leaves the lock file
+  untouched, so a lint job that asked for a report got a file to decide about.
+  It now writes nothing, says so, and still reports the baseline it observed;
+  `--json` gained a `written` boolean beside `baseline`.
+
 [1.4.0]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.4.0
 
 ## [1.3.0] — 2026-09-13

@@ -219,6 +219,20 @@ test('without --fail-on-retirement, retiring labels change nothing', async () =>
   }
 });
 
+test('--no-update-lock writes no lock on the first run either', async () => {
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  try {
+    const r = await guard({ tools: 'node', 'lock-file': lockFile, 'update-lock': false });
+    assert.equal(r.code, EXIT_OK);
+    assert.match(r.stdout, /baseline recorded/);
+    assert.match(r.stdout, /Nothing written: --no-update-lock is set/);
+    await assert.rejects(() => readFile(lockFile, 'utf8'), /ENOENT/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('--no-update-lock leaves the lock alone', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');

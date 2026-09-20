@@ -16,6 +16,12 @@ export class DriftError extends Error {
   }
 }
 
+/** One line for a caught failure: a DriftError's hint belongs with its message. */
+export function errorText(err) {
+  if (!(err instanceof DriftError)) return String(err);
+  return err.hint ? `${err.message} ${err.hint}` : err.message;
+}
+
 export class NotFoundError extends DriftError {
   constructor(message) {
     super(message, { code: 'NOT_FOUND' });

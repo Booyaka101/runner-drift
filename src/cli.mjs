@@ -9,7 +9,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { DriftError } from './http.mjs';
+import { DriftError, errorText } from './http.mjs';
 import {
   IMAGE_OS_TO_LABEL,
   deadlineFor,
@@ -29,7 +29,7 @@ import { detect, SELF_HOSTED } from './detect.mjs';
 import { canonicalTool, knownTools, MANIFEST_CANDIDATES } from './tools.mjs';
 import { probeTool, isProbeable } from './probe.mjs';
 import { diffTool, shouldFail, maxSeverity } from './diff.mjs';
-import { readLock, writeLock, DEFAULT_LOCK_FILE, toolsEntry, toVersionMap } from './lock.mjs';
+import { readLock, writeLock, lockPayload, DEFAULT_LOCK_FILE, toolsEntry, toVersionMap } from './lock.mjs';
 import {
   planReport,
   stepSummaryMarkdown,
@@ -647,7 +647,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
         manifest = m.skipped ? null : m;
       }
     } catch (err) {
-      infraWarnings.push(err instanceof DriftError ? `${err.message}${err.hint ? ` ${err.hint}` : ''}` : String(err));
+      infraWarnings.push(errorText(err));
     }
     if (manifest) {
       const { map, missing } = resolveManifestVersions(manifest, needManifest);
@@ -668,10 +668,10 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
 
   // First run: record the baseline and stop.
   if (!lock) {
-    const written = await writeLock(
-      { label, imageOS, imageVersion, tools: observed, updatedAt: new Date().toISOString() },
-      lockFile,
-    );
+    const baseline = { label, imageOS, imageVersion, tools: observed, updatedAt: new Date().toISOString() };
+    // --no-update-lock covers the first run too. A job that asked for a report
+    // and got a file it then has to decide whether to commit is a surprise.
+    const written = opts['update-lock'] ? await writeLock(baseline, lockFile) : lockPayload(baseline);
     const summary = stepSummaryMarkdown({
       label,
       toImage: imageVersion,
@@ -686,6 +686,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
         JSON.stringify(
           {
             baseline: true,
+            written: opts['update-lock'],
             lock: written,
             ...(retirement ? { retirement } : {}),
             ...(migration ? { migration } : {}),
@@ -699,7 +700,12 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
       for (const n of probeNotes) out(io.stdout, `  ${n}`);
       const manifestOnly = Object.entries(observed).filter(([, v]) => v.source === 'manifest');
       for (const [t, v] of manifestOnly) out(io.stdout, `  ${t}: ${v.versions.join(', ')} (from manifest)`);
-      out(io.stdout, `Wrote ${lockFile}. Commit it so the next image bump can be diffed.`);
+      out(
+        io.stdout,
+        opts['update-lock']
+          ? `Wrote ${lockFile}. Commit it so the next image bump can be diffed.`
+          : `Nothing written: --no-update-lock is set. Drop it to record ${lockFile} as the baseline.`,
+      );
     }
     if (retiring) reportRetirement(io, retiring);
     if (migrating) reportMigration(io, migrating);
@@ -739,7 +745,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
         });
       }
     } catch (err) {
-      const msg = err instanceof DriftError ? `${err.message}${err.hint ? ` ${err.hint}` : ''}` : String(err);
+      const msg = errorText(err);
       out(io.stdout, `::warning title=runner-drift::Attribution unavailable — ${msg}`);
     }
   }

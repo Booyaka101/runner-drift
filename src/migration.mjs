@@ -14,7 +14,7 @@
 import { migrationStatus } from './labels.mjs';
 import { loadManifest, resolveManifestVersions } from './manifest.mjs';
 import { diffTool } from './diff.mjs';
-import { DriftError } from './http.mjs';
+import { errorText } from './http.mjs';
 
 /**
  * Image-level facts that are not installed tools but change with the OS. They
@@ -80,9 +80,7 @@ export async function surveyMigration({
   try {
     [a, b] = await Promise.all([load(status.from), load(status.to)]);
   } catch (err) {
-    survey.notes.push(
-      err instanceof DriftError ? `${err.message}${err.hint ? ` ${err.hint}` : ''}` : String(err),
-    );
+    survey.notes.push(errorText(err));
     return survey;
   }
   for (const m of [a, b]) {

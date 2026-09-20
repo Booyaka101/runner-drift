@@ -29,7 +29,7 @@ export {
 } from './detect.mjs';
 export { probeTool, probeTools, isProbeable, PROBES } from './probe.mjs';
 export { diffTool, diffToolMaps, shouldFail, maxSeverity, severityBetween, compareVersions, compareDottedNumbers } from './diff.mjs';
-export { readLock, writeLock, emptyLock, toVersionMap, SCHEMA_VERSION, DEFAULT_LOCK_FILE } from './lock.mjs';
+export { readLock, writeLock, lockPayload, emptyLock, toVersionMap, SCHEMA_VERSION, DEFAULT_LOCK_FILE } from './lock.mjs';
 export {
   planReport,
   stepSummaryMarkdown,
@@ -125,4 +125,4 @@ export {
 } from './labels.mjs';
 export { MS_PER_DAY, daysFromMs, isPast } from './dates.mjs';
 export { COMMAND_ALIASES, MANIFEST_CANDIDATES, canonicalTool, knownTools } from './tools.mjs';
-export { DriftError, NotFoundError } from './http.mjs';
+export { DriftError, NotFoundError, errorText } from './http.mjs';
