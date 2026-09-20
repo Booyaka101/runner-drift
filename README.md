@@ -24,11 +24,15 @@ brownouts starting 2027-03-23](https://github.com/actions/runner-images/issues/1
 
 ```
 $ npx runner-drift plan --from ubuntu-22.04 --to ubuntu-24.04
-ubuntu-22.04 -> ubuntu-24.04 (images 20260720.234.2 -> 20260720.247.2)
+ubuntu-22.04 -> ubuntu-24.04 (images 20260907.292.1 -> 20260907.300.1)
 ubuntu-22.04 is fully unsupported on 2027-04-17; brownouts begin 2027-03-23 (source: actions/runner-images#14254)
-255 days left (230 days until the first brownout) — deprecation began 2026-09-17; see https://github.com/actions/runner-images/issues/14254
+209 days left (184 days until the first brownout) — deprecation began 2026-09-17; see https://github.com/actions/runner-images/issues/14254
 brownout windows (14:00-00:00 UTC): 2027-03-23, 2027-03-30, 2027-04-06, 2027-04-13
 announced migration targets: ubuntu-24.04, ubuntu-26.04, ubuntu-latest
+
+OS 22.04.5 LTS -> 24.04.5 LTS  MAJOR
+Kernel 6.8.0-1064-azure -> 6.17.0-1022-azure  MINOR
+Systemd 249.11-0ubuntu3.22 -> 255.4-1ubuntu8.17  MAJOR
 
 Clang 13.0.1,14.0.0,15.0.7 -> 16.0.6,17.0.6,18.1.3  REMOVED: 13.0.1, 14.0.0, 15.0.7 / ADDED: 16.0.6, 17.0.6, 18.1.3
 Python 3.10.12 -> 3.12.3  MINOR
@@ -36,7 +40,8 @@ Python 3.10.12 -> 3.12.3  MINOR
 2 of 3 detected tool(s) change; 1 unchanged (not shown)
 ```
 
-That is real output against the live manifests. Note what is **not** there: CMake.
+That is real output against the live manifests, run on 2026-09-20. Note what is
+**not** there: CMake.
 It is 3.31.6 on both images, so it is suppressed — the report is only the rows that
 affect you, picked by scanning your own workflows for the tools your steps invoke.
 
@@ -92,7 +97,7 @@ npm i -g runner-drift          # or globally
 ```bash
 $ runner-drift init
 Scanned 2 workflow file(s) in .github/workflows
-Runner label: ubuntu-22.04 (image 20260720.234.2, 22.04.5 LTS)
+Runner label: ubuntu-22.04 (image 20260907.292.1, 22.04.5 LTS)
 Locked 3 tool(s): CMake, Clang, Python
 Wrote runner-lock.json
 Heads up: ubuntu-22.04 is fully unsupported on 2027-04-17 (https://github.com/actions/runner-images/issues/14254)
