@@ -205,6 +205,19 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   explanation, exactly as it does when there is no job id at all, and says so
   rather than reporting the label as migrated.
 
+- A label written under a key named `name`, `run` or `if` was dropped even when
+  that key held a map rather than prose. 1.4.0 taught the matrix fallback to skip
+  the keys that hold shell and titles, and an empty one swallowed everything
+  indented under it, so a `workflow_call` input called `name` took its `default:`
+  with it and both `--fail-on-retirement` and `--fail-on-migration` went silent
+  for that file. An empty prose key now only owns a body that is not itself a
+  map.
+
+- The migration step-summary table badged the phase, not the outcome, so a runner
+  still serving the old image after the window closed showed `✅ settled` in the
+  row beside its own `::error`. The column is headed Status now and names the
+  state: moved early, not yet, in window, migrated, settled, stale, unexpected.
+
 - A `runs-on:` taken from an expression resolved outside the jobs map lost its
   job. A `workflow_call` input default and a top-level `env:` value both sit
   above `jobs:`, so the line the label was read from carried no job id, and with

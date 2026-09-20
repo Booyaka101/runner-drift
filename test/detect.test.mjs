@@ -378,6 +378,26 @@ test('a label written in a step name or a condition is not a runner', () => {
   assert.deepEqual(extractLabels(y), ['ubuntu-24.04']);
 });
 
+test('an empty prose key that holds a map is read, not skipped', () => {
+  // `name:` is a prose key, but `inputs.name` is an input whose default a
+  // `runs-on:` expression resolves to.
+  const y = [
+    'on:',
+    '  workflow_call:',
+    '    inputs:',
+    '      name:',
+    '        default: ubuntu-22.04',
+    'jobs:',
+    '  a:',
+    '    runs-on: ${{ inputs.name }}',
+  ].join('\n');
+  assert.deepEqual(extractLabels(y), ['ubuntu-22.04']);
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => [s.label, s.line, s.job]),
+    [['ubuntu-22.04', 5, 'a']],
+  );
+});
+
 test('a key under the block that follows the jobs map is not a job id', () => {
   // `x-` template blocks are a real shape, and the id can collide with a job's.
   const y = [

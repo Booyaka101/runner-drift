@@ -344,15 +344,25 @@ test('a survey with no site on disk still gets one step-level annotation', async
   assert.match(line, /^::notice title=runner-drift: /);
 });
 
-test('the step summary names the window, the phase and the image diff', async () => {
+test('the step summary names the window, the status and the image diff', async () => {
   const md = migrationSummaryMarkdown([await survey(BEFORE)]);
   assert.match(md, /^## runner-drift — floating label migration/);
-  assert.match(md, /\| Label \| Phase \| Move \| Window \| This runner \| Source \|/);
+  assert.match(md, /\| Label \| Status \| Move \| Window \| This runner \| Source \|/);
   assert.match(
     md,
     /\| `ubuntu-latest` \| 🗓 pending \| `ubuntu-24\.04` → `ubuntu-26\.04` \| 2026-10-19 \(18 days\) → 2026-11-19 \(49 days\) \| — \| \[actions\/runner-images#14748\]/,
   );
   assert.match(md, /\| Kernel \| 6\.17\.0-1022-azure \| 7\.0\.0-1012-azure \| 🔴 MAJOR \|/);
+});
+
+test('a runner left on the old image is badged stale, not settled', async () => {
+  // The row sits beside this survey's own ::error, so the calendar-only badge
+  // read as a clean bill of health.
+  const s = await survey(AFTER, 'ubuntu24');
+  assert.equal(s.state, MIGRATION_STATE.STALE);
+  const md = migrationSummaryMarkdown([s]);
+  assert.match(md, /\| `ubuntu-latest` \| 🔴 stale \|/);
+  assert.doesNotMatch(md, /settled/);
 });
 
 test('a floating label inside a matrix is a site like any other', () => {

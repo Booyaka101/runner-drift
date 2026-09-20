@@ -223,6 +223,21 @@ function scanRunsOn(lines) {
  */
 const PROSE_KEYS = new Set(['run', 'name', 'if']);
 
+/**
+ * Whether the lines under an empty prose key are its body rather than a map.
+ * `inputs.name.default` is a value a `runs-on:` expression can resolve to; the
+ * indented text under a step's `name:` is the title continued.
+ */
+function foldsOver(lines, i, indent) {
+  for (let j = i + 1; j < lines.length; j++) {
+    const text = stripComment(lines[j]);
+    if (!text.trim()) continue;
+    if (indentOf(text) <= indent) return false;
+    return !/^[ \t]*(-[ \t]+)?[^:\s][^:\r\n]*:([ \t]|$)/.test(text);
+  }
+  return false;
+}
+
 function matrixLabels(lines) {
   const found = [];
   let scalar = null;
@@ -242,8 +257,11 @@ function matrixLabels(lines) {
       // written with a block marker, since a plain scalar folds over them too.
       // A dashed key owns the column the dash sits in, so the step's own
       // siblings (`env:`, `with:`) are not read as part of the script.
-      if (/^[|>]/.test(key[4].trim()) || PROSE_KEYS.has((key[3] ?? '').trim().toLowerCase())) {
-        scalar = key[1].length + (key[2]?.length ?? 0);
+      const value = key[4].trim();
+      const owns = key[1].length + (key[2]?.length ?? 0);
+      const prose = PROSE_KEYS.has((key[3] ?? '').trim().toLowerCase());
+      if (/^[|>]/.test(value) || (prose && (value || foldsOver(lines, i, owns)))) {
+        scalar = owns;
         continue;
       }
     }

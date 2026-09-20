@@ -13,7 +13,6 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { daysUntil } from './dates.mjs';
 import {
-  MIGRATION_PHASE,
   MIGRATION_STATE,
   deadlineFor,
   retirementStatus,
@@ -418,10 +417,18 @@ const MIGRATION_TITLE = {
   [MIGRATION_STATE.UNEXPECTED]: (s) => `unrecognised image on ${s.label}`,
 };
 
+// Keyed by state, not by phase: after the window a runner still on the old
+// image is the anomaly this lane exists to catch, and the calendar alone would
+// badge it settled next to its own ::error.
 const MIGRATION_BADGE = {
-  [MIGRATION_PHASE.PENDING]: '🗓 pending',
-  [MIGRATION_PHASE.IN_WINDOW]: '🟠 in window',
-  [MIGRATION_PHASE.SETTLED]: '✅ settled',
+  [MIGRATION_STATE.PENDING]: '🗓 pending',
+  [MIGRATION_STATE.MOVED_EARLY]: '🟠 moved early',
+  [MIGRATION_STATE.NOT_YET_MIGRATED]: '🟠 not yet',
+  [MIGRATION_STATE.AMBIGUOUS]: '🟠 in window',
+  [MIGRATION_STATE.MIGRATED]: '✅ migrated',
+  [MIGRATION_STATE.SETTLED]: '✅ settled',
+  [MIGRATION_STATE.STALE]: '🔴 stale',
+  [MIGRATION_STATE.UNEXPECTED]: '🔴 unexpected',
 };
 
 /** The one sentence that describes a survey. No source link; callers add it. */
@@ -480,7 +487,7 @@ export function migrationAnnotations(surveys) {
 export function migrationSummaryMarkdown(surveys) {
   const rows = surveys.map((s) => [
     `\`${s.label}\``,
-    MIGRATION_BADGE[s.phase],
+    MIGRATION_BADGE[s.state],
     `\`${s.from}\` → \`${s.to}\``,
     `${dateWithCountdown(s.starts, s.daysToStart)} → ${dateWithCountdown(s.ends, s.daysToEnd)}`,
     s.observed ? `\`${s.observed}\`` : '—',
@@ -489,7 +496,7 @@ export function migrationSummaryMarkdown(surveys) {
   const lines = [
     '## runner-drift — floating label migration',
     '',
-    ...markdownTable(['Label', 'Phase', 'Move', 'Window', 'This runner', 'Source'], rows),
+    ...markdownTable(['Label', 'Status', 'Move', 'Window', 'This runner', 'Source'], rows),
   ];
   for (const s of surveys) {
     lines.push('', migrationMessage(s));

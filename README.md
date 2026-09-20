@@ -331,7 +331,7 @@ The step summary carries the same line, above the drift table.
 
 Exit codes and the `--fail-on` thresholds are untouched by any of this.
 `--json` gains a `migration` block, and the
-step summary gains a table (Label, Phase, Move, Window, This runner, Source).
+step summary gains a table (Label, Status, Move, Window, This runner, Source).
 The explanation above has its own `explains` key next to `diffs`, which is there
 with or without the flag, and is `null` when nothing announced explains the jump.
 Adding `windows-latest` or `macos-latest` later is a data change in `MIGRATIONS`,

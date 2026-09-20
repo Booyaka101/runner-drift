@@ -102,7 +102,6 @@ export function runnerRoutes({ scopePath, fleet, recorded, releases, listing = n
   };
 }
 
-/** Capture stdout/stderr from a command function. */
 /**
  * The `--json` document a run printed, past the annotation lines above it.
  * Found by the line the document opens on: an annotation can contain a brace of
@@ -115,6 +114,7 @@ ${stdout}`);
   return JSON.parse(stdout.slice(at));
 }
 
+/** Capture stdout/stderr from a command function. */
 export function captureIO() {
   const outChunks = [];
   const errChunks = [];
