@@ -156,7 +156,7 @@ jobs:
       # run is that the lane resolved the label and named its source.
       - name: guard --fail-on-migration on a real floating runner
         run: |
-          set -uo pipefail
+          set +e
           out="$(node src/cli.mjs guard --tools node --fail-on-migration 30 --no-update-lock 2>&1)"
           code=$?
           printf '%s\n' "$out"

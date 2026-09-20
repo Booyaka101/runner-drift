@@ -539,6 +539,30 @@ test('the job that does ask for the label owns the image it ran on', async () =>
   assert.equal(r.code, EXIT_DRIFT, 'ubuntu-latest serving 22.04 is a real anomaly');
 });
 
+test('a job pinned to the old image is not the floating label running late', async () => {
+  // ubuntu-24.04 is a window endpoint, so this is the case where "the image is
+  // one of the two" must not override "this job never asked for the label".
+  const r = await guard(
+    { tools: 'node', 'fail-on-migration': '0', json: true },
+    { ImageOS: 'ubuntu24', ...inJob('pinned') },
+    AFTER,
+  );
+  const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+  assert.equal(j.migration.surveys[0].state, MIGRATION_STATE.SETTLED);
+  assert.equal(r.code, EXIT_OK, 'a pinned job is not a stale floating runner');
+  assert.ok(!r.stdout.includes('::error'), 'nothing to raise');
+});
+
+test('the step summary says why This runner is a dash', async () => {
+  const s = await survey(DURING, 'ubuntu22', {
+    sites: [{ label: 'ubuntu-latest', file: 'ci.yml', line: 6, col: 14, job: 'build' }],
+    here: { job: 'lint', file: 'ci.yml' },
+  });
+  const md = migrationSummaryMarkdown([s]);
+  assert.match(md, /\| — \|/, 'no image attributed');
+  assert.match(md, /Job that ran this check|did not run on ubuntu-latest/);
+});
+
 test('mid-window, the job on the floating label still reads as migrated', async () => {
   const r = await guard(
     { tools: 'node', 'fail-on-migration': '30', json: true },

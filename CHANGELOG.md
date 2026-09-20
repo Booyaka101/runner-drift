@@ -83,7 +83,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   annotation group, a new step-summary table (Label, Phase, Move, Window, This
   runner, Source) and a new `migration` key in `--json`.
 
-- **`--as-of <date>`** on every command. It moves the clock every countdown is
+- **`--as-of <date>`** on every command that counts down to something (`guard`, `plan`, `runners`, `actions`). It moves the clock every countdown is
   measured from and nothing else, so `plan --from ubuntu-latest --as-of
   2026-10-19` answers what the report will say on the first day of the rollout
   without pretending the run happened then. It is also what makes the migration

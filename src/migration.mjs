@@ -59,18 +59,25 @@ export function attributeImageOS({ label, imageOS, sites = [], here = null }) {
   const mine = sites.filter((site) => siteInJob(site, here));
 
   if (mine.some((site) => !site.viaMatrix)) return { imageOS, note: null };
-  if (endpoint) return { imageOS, note: null };
   if (mine.length) {
+    if (endpoint) return { imageOS, note: null };
     return {
       imageOS: null,
       note: `Job "${here.job}" reaches ${label} through a matrix and ran on ${observed ?? imageOS}, `
         + 'which is neither image in the window, so this runner is treated as a different matrix leg.',
     };
   }
-  const who = here ? `The job that ran this check ("${here.job}")` : 'This check';
+  if (!here) {
+    if (endpoint) return { imageOS, note: null };
+    return {
+      imageOS: null,
+      note: `This check did not run on ${label}, so its ImageOS is not evidence about the migration.`,
+    };
+  }
   return {
     imageOS: null,
-    note: `${who} did not run on ${label}, so its ImageOS is not evidence about the migration.`,
+    note: `The job that ran this check ("${here.job}") did not run on ${label}, `
+      + 'so its ImageOS is not evidence about the migration.',
   };
 }
 

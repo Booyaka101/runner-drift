@@ -464,6 +464,9 @@ export function migrationSummaryMarkdown(surveys) {
   ];
   for (const s of surveys) {
     lines.push('', migrationMessage(s));
+    // The "This runner" cell is a dash whenever the image could not be read or
+    // could not be attributed, and the note is the difference between the two.
+    for (const n of s.notes) lines.push('', n);
     const diffRows = [...s.image, ...s.toolDiffs];
     if (!diffRows.length) continue;
     lines.push(
