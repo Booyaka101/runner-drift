@@ -140,11 +140,67 @@ function labelColumn(start, raw) {
 }
 
 /**
+ * One `runs-on:`-shaped value, from the line its key is on: a scalar, a flow
+ * sequence, or a block list below. Returns the last line index it consumed.
+ *
+ * `runs-on:` also takes a mapping of `group:` and `labels:`, and the labels
+ * under it are written in those same three shapes, so that branch calls back in
+ * here rather than repeating them. A group names a pool, not a label, and is
+ * the one key whose value must never be read as one.
+ */
+function readTarget(lines, i, baseIndent, rawValue, push) {
+  const raw = stripComment(rawValue);
+  const value = raw.trim();
+  const valueStart = lines[i].length - rawValue.length;
+  let expression = false;
+
+  if (value.includes('${{')) return { end: i, expression: true };
+
+  if (value.startsWith('[')) {
+    let offset = valueStart + lines[i].slice(valueStart).indexOf('[') + 1;
+    for (const part of value.replace(/^\[|\]$/g, '').split(',')) {
+      if (part.includes('${{')) expression = true;
+      else push(part, i + 1, labelColumn(offset, part));
+      offset += part.length + 1;
+    }
+    return { end: i, expression };
+  }
+
+  if (value) {
+    push(value, i + 1, labelColumn(valueStart, raw));
+    return { end: i, expression };
+  }
+
+  let end = i;
+  for (let j = i + 1; j < lines.length; j++) {
+    const l = lines[j];
+    if (l.trim() === '') continue;
+    if (indentOf(l) <= baseIndent) break;
+    const mapping = l.match(/^([ \t]*)(group|labels):[ \t]*([^\r\n]*)/);
+    if (mapping) {
+      if (mapping[2] === 'labels') {
+        const inner = readTarget(lines, j, mapping[1].length, mapping[3], push);
+        expression = expression || inner.expression;
+        j = inner.end;
+      }
+      end = j;
+      continue;
+    }
+    const dash = l.match(/^([ \t]*-[ \t]*)([^\r\n]*)/);
+    const item = stripComment(dash ? dash[2] : l.trim()).trim();
+    if (item.includes('${{')) expression = true;
+    else push(item, j + 1, labelColumn(dash ? dash[1].length : indentOf(l), item));
+    end = j;
+  }
+  return { end, expression };
+}
+
+/**
  * Every `runs-on:` value in a document, positioned. `expression` reports
  * whether any value was a `${{ … }}` reference, which is what makes the
  * matrix fallback below kick in.
  *
- * Two shapes here are load-bearing for linear time, and both were quadratic
+ * Two shapes are load-bearing for linear time, and both were quadratic
  * before 1.2.0 (CodeQL js/polynomial-redos). Indentation is `[ \t]`, not `\s`,
  * and the value is `([^\r\n]*)` with no `$`. The pair matters: `\s*(.*)$` lets
  * both quantifiers match a space, and `$` can fail because `.` excludes line
@@ -172,39 +228,20 @@ function scanRunsOn(lines) {
   for (let i = 0; i < lines.length; i++) {
     const m = lines[i].match(/^([ \t]*)runs-on:[ \t]*([^\r\n]*)/);
     if (!m) continue;
-    const baseIndent = m[1].length;
-    const raw = stripComment(m[2]);
-    const value = raw.trim();
-    const valueStart = lines[i].length - m[2].length;
 
     // Anchored on the `runs-on:` line itself: the set is the target, so pointing
     // at one item of a block list would be arbitrary.
-    target = { labels: [], expression: false, line: i + 1, col: valueStart + 1 };
+    target = {
+      labels: [],
+      expression: false,
+      line: i + 1,
+      col: lines[i].length - m[2].length + 1,
+    };
     targets.push(target);
 
-    if (!value) {
-      for (let j = i + 1; j < lines.length; j++) {
-        const l = lines[j];
-        if (l.trim() === '') continue;
-        if (indentOf(l) <= baseIndent) break;
-        const dash = l.match(/^([ \t]*-[ \t]*)([^\r\n]*)/);
-        const item = stripComment(dash ? dash[2] : l.trim()).trim();
-        if (item.includes('${{')) expression = target.expression = true;
-        else push(item, j + 1, labelColumn(dash ? dash[1].length : indentOf(l), item));
-        i = j;
-      }
-    } else if (value.startsWith('[')) {
-      let offset = valueStart + lines[i].slice(valueStart).indexOf('[') + 1;
-      for (const part of value.replace(/^\[|\]$/g, '').split(',')) {
-        if (part.includes('${{')) expression = target.expression = true;
-        else push(part, i + 1, labelColumn(offset, part));
-        offset += part.length + 1;
-      }
-    } else if (value.includes('${{')) {
-      expression = target.expression = true;
-    } else {
-      push(value, i + 1, labelColumn(valueStart, raw));
-    }
+    const read = readTarget(lines, i, m[1].length, m[2], push);
+    if (read.expression) expression = target.expression = true;
+    i = read.end;
   }
   return { found, targets, expression };
 }

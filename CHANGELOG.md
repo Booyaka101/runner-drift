@@ -4,6 +4,33 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] — 2026-09-20
+
+### Fixed
+
+- **`runs-on:` in its mapping form is now scanned** ([#12](https://github.com/Booyaka101/runner-drift/issues/12)).
+  A job that targets a runner group writes its labels under a mapping:
+
+  ```yaml
+  runs-on:
+    group: default
+    labels: [ubuntu-22.04]
+  ```
+
+  The scanner took whatever followed `runs-on:` as the label text, so this form
+  yielded nothing and the job was skipped in silence. A repo on a runner group
+  pinning a retiring image was told it had nothing to migrate, and the same job
+  never showed up in the `ubuntu-latest` migration lane either. It had been that
+  way since 1.0.0.
+
+  `labels:` takes the same three shapes `runs-on:` does (scalar, flow sequence,
+  block list), so the read loop was extracted into one function that calls back
+  into itself for the mapping rather than growing a fourth copy of those branches.
+  `group:` names a pool, not a label, and is never read as one. The annotation
+  points at the label where it sits, the same as every other form, and the labels
+  under one mapping stay one target, so `--label` matching and the migration lane
+  treat them as the set a runner has to carry.
+
 ## [1.4.0] — 2026-09-20
 
 ### Added
@@ -377,6 +404,7 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the lock, since that is the list it is about to compare. Both lanes now read
   `--tools`, then the lock, then the scan.
 
+[1.4.1]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.4.1
 [1.4.0]: https://github.com/Booyaka101/runner-drift/releases/tag/v1.4.0
 
 ## [1.3.0] — 2026-09-13

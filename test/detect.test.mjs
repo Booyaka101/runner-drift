@@ -173,6 +173,84 @@ test('labelSites: block-sequence items carry their own line and column', () => {
   assert.deepEqual(extractLabelSites(y), [{ label: 'macos-14', file: null, line: 5, col: 9, job: 'a' }]);
 });
 
+test('labelSites: a runs-on mapping reads its labels and not its group', () => {
+  const y = 'jobs:\n  a:\n    runs-on:\n      group: default\n      labels: [ubuntu-22.04]\n';
+  assert.deepEqual(extractLabelSites(y), [
+    { label: 'ubuntu-22.04', file: null, line: 5, col: 16, job: 'a' },
+  ]);
+});
+
+test('labelSites: a mapping whose labels are a block list', () => {
+  const y = [
+    'jobs:',
+    '  a:',
+    '    runs-on:',
+    '      group: big',
+    '      labels:',
+    '        - self-hosted',
+    '        - macos-14',
+    '    steps: []',
+  ].join('\n');
+  assert.deepEqual(extractLabelSites(y), [
+    { label: 'macos-14', file: null, line: 7, col: 11, job: 'a' },
+  ]);
+});
+
+test('labelSites: a mapping whose labels are a single scalar', () => {
+  const y = 'jobs:\n  a:\n    runs-on:\n      labels: ubuntu-22.04\n';
+  assert.deepEqual(extractLabelSites(y), [
+    { label: 'ubuntu-22.04', file: null, line: 4, col: 15, job: 'a' },
+  ]);
+});
+
+test('a group on its own is a pool, not a label', () => {
+  const y = 'jobs:\n  a:\n    runs-on:\n      group: default\n    steps: []\n';
+  assert.deepEqual(extractLabels(y), []);
+  assert.deepEqual(extractLabelSites(y), []);
+  assert.deepEqual(extractRunsOnTargets(y)[0].labels, []);
+});
+
+test('a mapping is one target, so its labels are a set the runner must carry', () => {
+  const y = [
+    'jobs:',
+    '  a:',
+    '    runs-on:',
+    '      group: big',
+    '      labels: [self-hosted, macos-14]',
+    '  b:',
+    '    runs-on: ubuntu-22.04',
+  ].join('\n');
+  const targets = extractRunsOnTargets(y);
+  assert.equal(targets.length, 2);
+  assert.deepEqual(targets[0].labels, [SELF_HOSTED, 'macos-14']);
+  assert.deepEqual(targets[1].labels, ['ubuntu-22.04']);
+});
+
+test('a floating label under a mapping is still floating', () => {
+  const y = 'jobs:\n  a:\n    runs-on:\n      group: default\n      labels: [ubuntu-latest]\n';
+  assert.deepEqual(extractFloatingSites(y), [
+    { label: 'ubuntu-latest', file: null, line: 5, col: 16, job: 'a' },
+  ]);
+});
+
+test('an expression inside a mapping marks the target, same as a bare one', () => {
+  const y = [
+    'jobs:',
+    '  a:',
+    '    runs-on:',
+    '      group: default',
+    '      labels: [${{ matrix.os }}]',
+    '    strategy:',
+    '      matrix:',
+    '        os: [ubuntu-22.04]',
+  ].join('\n');
+  assert.ok(extractRunsOnTargets(y)[0].expression, 'the mapping resolves through the matrix');
+  assert.deepEqual(
+    extractLabelSites(y).map((s) => s.label),
+    ['ubuntu-22.04'],
+  );
+});
+
 test('labelSites: ${{ matrix.os }} resolves to the matrix value positions', () => {
   const y = [
     'jobs:',
@@ -602,6 +680,7 @@ test('the line scanners stay linear on pathological input', () => {
     ['run: with a trailing CR', () => extractRunScripts(`  run:${pad}${CR}x`)],
     ['runs-on: with a trailing CR', () => extractRunsOnTargets(`runs-on:${pad}${CR}x`)],
     ['a block-list dash with a CR', () => extractRunsOnTargets(`runs-on:\n${pad}-${pad}${CR}`)],
+    ['a labels: key with a CR', () => extractRunsOnTargets(`runs-on:\n  labels:${pad}${CR}`)],
     ['extractLabels', () => extractLabels(`runs-on:${pad}${CR}x`)],
     ['extractLabelSites', () => extractLabelSites(`runs-on:${pad}${CR}x`)],
     ['commandsInScript after sudo', () => commandsInScript(`sudo${pad}x`)],
