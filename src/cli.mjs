@@ -771,6 +771,10 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   let attribution0 = null;
   let approximate = false;
   const infraWarnings = [];
+  // Tools nothing could observe this run. Unobserved is not removed: a rate
+  // limit must not diff as REMOVED, nor drop the tool from the lock so that the
+  // next run reads it as ADDED.
+  const unobserved = new Set();
 
   if (needManifest.length) {
     // Pinning the manifest to the commit that shipped this image version is an
@@ -805,7 +809,10 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
       }
     } else {
       for (const t of needManifest) {
-        infraWarnings.push(`${t}: not probeable here and the ${label} manifest could not be fetched — skipped.`);
+        unobserved.add(t);
+        infraWarnings.push(
+          `${t}: not probeable here and the ${label} manifest could not be fetched — not compared.`,
+        );
       }
     }
   }
@@ -862,7 +869,9 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   // Diff against the lock.
   const lockedMap = toVersionMap(lock.tools);
   const observedMap = toVersionMap(observed);
-  const watched = tools.filter((t) => Object.hasOwn(lockedMap, t) || Object.hasOwn(observedMap, t));
+  const watched = tools.filter(
+    (t) => !unobserved.has(t) && (Object.hasOwn(lockedMap, t) || Object.hasOwn(observedMap, t)),
+  );
   const diffs = watched.map((t) => diffTool(t, lookup(lockedMap, t), lookup(observedMap, t)));
   const changed = diffs.filter((d) => d.changed);
 
@@ -925,8 +934,13 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   for (const line of annotations(diffs, attributionMap, label)) out(io.stdout, line);
 
   if (updateLock) {
+    const kept = Object.create(null);
+    for (const t of unobserved) {
+      const entry = lookup(lock.tools ?? {}, t);
+      if (entry) kept[t] = entry;
+    }
     await writeLock(
-      { label, imageOS, imageVersion, tools: observed, updatedAt: new Date().toISOString() },
+      { label, imageOS, imageVersion, tools: { ...observed, ...kept }, updatedAt: new Date().toISOString() },
       lockFile,
     );
   }

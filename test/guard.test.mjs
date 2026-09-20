@@ -209,6 +209,38 @@ test('a rate-limited attribution lookup does not cost the manifest read', async 
   }
 });
 
+test('a manifest that cannot be read at all is not every locked tool removed', async () => {
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  // Both reads refused: the pinned commit lookup by the API, the label's own
+  // readme by a dropped connection.
+  const api = stubApi(() => ({ status: 403, body: '', headers: { 'x-ratelimit-remaining': '0' } }));
+  try {
+    await writeLock(
+      {
+        label: 'ubuntu-22.04',
+        imageOS: 'ubuntu22',
+        imageVersion: IMAGE,
+        tools: { Bazel: { versions: ['9.1.0'], source: 'manifest' } },
+      },
+      lockFile,
+    );
+    const r = await guard({ tools: 'Bazel', 'lock-file': lockFile, 'fail-on': 'major', summary: false }, ENV, {
+      loadManifest: async () => {
+        throw new Error('fetch failed (ECONNRESET)');
+      },
+    });
+    assert.equal(r.code, EXIT_OK, 'an unreadable manifest is not drift');
+    assert.match(r.stdout, /Bazel: .*could not be fetched/);
+    assert.doesNotMatch(r.stdout, /REMOVED/);
+    const after = await readLock(lockFile);
+    assert.deepEqual(after.tools.Bazel.versions, ['9.1.0'], 'kept, or the next run calls it ADDED');
+  } finally {
+    api.restore();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('exit code 1 only under --fail-on major (and above)', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');

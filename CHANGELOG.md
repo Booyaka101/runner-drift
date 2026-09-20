@@ -195,6 +195,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   the build over a rate limit. The readme fallback now runs whatever the API
   did.
 
+- A tool nothing could observe was still diffed as REMOVED. When both manifest
+  reads fail, every manifest-only tool in the lock was warned about as skipped
+  and then reported as removed in the same run, so `--fail-on major` red the
+  build over an `ECONNRESET` even with the readme fallback in place. Unobserved
+  is not removed: those tools are left out of the diff, and they keep the entry
+  the lock already has so the next run does not read them as added either.
+
 - A job id the run could not be placed by let one workflow file speak for
   another. Inside a reusable workflow `GITHUB_WORKFLOW_REF` names the caller,
   so the job is matched on its id alone, and an id is unique in a file rather
