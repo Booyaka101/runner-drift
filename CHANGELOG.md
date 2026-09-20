@@ -162,7 +162,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   ran. With no `GITHUB_JOB` either job explains the image, and the lane that
   attributes `ImageOS` has always said so. Now both do.
 
-- Every countdown said "(1 days)" on the last day before the date it counts to.
+- Every countdown said "(1 days)" on the last day before the date it counts to,
+  including the annotation titles and the retirement lane's "1 days left".
+
+- `--tools constructor`, or a lock file with a tool of that name, crashed in the
+  manifest resolver: the candidate-names table answered with a function, and a
+  function is not a list of names. The three tables keyed by a tool or a command
+  read as data now, like the label ones.
 
 - A manifest read that failed was remembered as failed. The run reads each
   manifest once, and the memo held the rejected promise, so the lane that asked

@@ -74,8 +74,8 @@ export function deadlineLines(label, now = new Date()) {
     left === null
       ? null
       : left > 0
-        ? `${left} days left${untilBrownout !== null && untilBrownout > 0 ? ` (${untilBrownout} until the first brownout)` : ''}`
-        : `retired ${Math.abs(left)} days ago`;
+        ? `${plural(left, 'day')} left${untilBrownout !== null && untilBrownout > 0 ? ` (${untilBrownout} until the first brownout)` : ''}`
+        : `retired ${plural(Math.abs(left), 'day')} ago`;
   if (countdownLine) {
     lines.push(`${countdownLine} — deprecation began ${dl.deprecationStart}; see ${dl.source}`);
   }
@@ -402,7 +402,7 @@ const MIGRATION_KIND = {
 };
 
 const MIGRATION_TITLE = {
-  [MIGRATION_STATE.PENDING]: (s) => `${s.label} becomes ${s.to} in ${s.daysToStart} days`,
+  [MIGRATION_STATE.PENDING]: (s) => `${s.label} becomes ${s.to} in ${plural(s.daysToStart, 'day')}`,
   [MIGRATION_STATE.MOVED_EARLY]: (s) => `${s.label} is already ${s.to}`,
   [MIGRATION_STATE.NOT_YET_MIGRATED]: (s) => `${s.label} migration under way`,
   [MIGRATION_STATE.MIGRATED]: (s) => `${s.label} is now ${s.to}`,

@@ -19,6 +19,7 @@
  */
 
 import { diffToolMaps } from './diff.mjs';
+import { lookup } from './tables.mjs';
 import { fetchText, NotFoundError, DriftError } from './http.mjs';
 import { RAW_BASE, pathForLabel } from './labels.mjs';
 import { manifestCandidates } from './tools.mjs';
@@ -215,7 +216,7 @@ export function parseManifest(markdown, label = null) {
     const headerM = line.match(/^[ \t]*-[ \t]+([^:\s][^:\r\n]*):[ \t]*([^\r\n]+)/);
     if (headerM) {
       const key = headerM[1].trim().toLowerCase();
-      const field = Object.hasOwn(HEADER_FIELDS, key) ? HEADER_FIELDS[key] : null;
+      const field = lookup(HEADER_FIELDS, key);
       if (field) {
         header[field] ??= headerM[2].trim();
         continue;

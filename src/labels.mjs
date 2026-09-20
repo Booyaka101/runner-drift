@@ -7,6 +7,7 @@
  */
 
 import { daysUntil as daysUntilDate } from './dates.mjs';
+import { lookup } from './tables.mjs';
 
 export const RUNNER_IMAGES_REPO = 'actions/runner-images';
 export const RAW_HOST = 'https://raw.githubusercontent.com';
@@ -136,15 +137,6 @@ export const DEADLINES = {
 
 export function knownLabels() {
   return Object.keys(LABEL_PATHS);
-}
-
-/**
- * Read a table with a key that came from a workflow file, an env var or argv.
- * Own keys only: `__proto__` and `constructor` are labels nobody has, and every
- * one of these tables answering them with something truthy is a wrong answer.
- */
-function lookup(table, key) {
-  return typeof key === 'string' && Object.hasOwn(table, key) ? table[key] : null;
 }
 
 export function pathForLabel(label) {

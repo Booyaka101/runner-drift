@@ -13,7 +13,7 @@ import {
   detect,
   SELF_HOSTED,
 } from '../src/detect.mjs';
-import { canonicalTool } from '../src/tools.mjs';
+import { canonicalTool, manifestCandidates } from '../src/tools.mjs';
 import { FIXTURES } from './helpers.mjs';
 
 test('extracts an inline runs-on label', () => {
@@ -74,6 +74,15 @@ test('maps commands to the canonical manifest tool', () => {
   assert.equal(canonicalTool('g++'), 'GNU C++');
   assert.equal(canonicalTool('javac'), 'Temurin');
   assert.equal(canonicalTool('dotnet'), '.NET Core SDK');
+});
+
+test('a tool named after a property of Object is just an unknown tool', () => {
+  // `--tools constructor` used to hand a function to the manifest resolver,
+  // which asked it for a list of candidate names and crashed.
+  for (const name of ['constructor', 'toString', '__proto__']) {
+    assert.equal(typeof canonicalTool(name), 'string', name);
+    assert.deepEqual(manifestCandidates(name), [name], name);
+  }
 });
 
 test('actions/setup-* counts as using the tool', () => {

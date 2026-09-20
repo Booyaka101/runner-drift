@@ -666,6 +666,13 @@ test('a label that names a property of Object is in none of the tables', async (
   }
 });
 
+test('the day before the window opens, everything says one day', () => {
+  const s = migrationStatus('ubuntu-latest', { now: new Date('2026-10-18T00:00:00Z') });
+  const [a] = migrationAnnotations([{ ...s, sites: [{ file: 'ci.yml', line: 6, col: 14 }] }]);
+  assert.match(a, /title=runner-drift: ubuntu-latest becomes ubuntu-26\.04 in 1 day:/);
+  assert.match(a, /The rollout starts 2026-10-19 \(1 day\)/);
+});
+
 test('an ImageOS that names a property of Object is not an image', () => {
   // ImageOS is an environment variable, so the table has to be read as data.
   assert.equal(labelForImageOS('__proto__'), null);
