@@ -1006,6 +1006,12 @@ test('a job id the calling workflow does not use is looked up in the callee', ()
   );
 });
 
+// The probe reads the interpreter running this test, so a literal version in the
+// lock below is drift only until a runner ships that exact Node. Derive one the
+// probe cannot report: `engines` floors this package at 22.
+const LOCKED_NODE = `${Number(process.versions.node.split('.')[0]) - 1}.0.0`;
+const LOCKED_NODE_DRIFT = new RegExp(`Node\\.js ${LOCKED_NODE.replaceAll('.', String.raw`\.`)} -> `);
+
 /**
  * Guard against a lock recorded on the pre-migration image, with the runner
  * serving the post-migration one: the drift a real user sees mid-rollout.
@@ -1019,7 +1025,7 @@ async function guardAcrossTheMove(opts, now, locked = { label: 'ubuntu-24.04', i
       {
         ...locked,
         imageVersion: IMAGE,
-        tools: { 'Node.js': { versions: ['22.23.2'], source: 'probe' } },
+        tools: { 'Node.js': { versions: [LOCKED_NODE], source: 'probe' } },
       },
       lockFile,
     );
@@ -1042,7 +1048,7 @@ test('drift caused by the migration is named as such, not left unexplained', asy
     /Explained by the scheduled ubuntu-latest migration ubuntu-24\.04 -> ubuntu-26\.04/,
   );
   assert.match(r.stdout, /\(2026-10-19 to 2026-11-19\)/);
-  assert.match(r.stdout, /Node\.js 22\.23\.2 -> /);
+  assert.match(r.stdout, LOCKED_NODE_DRIFT);
   assert.equal(r.stderr, '');
 });
 
@@ -1118,7 +1124,7 @@ test('a matrix leg pinned to the new image is not the migration arriving', async
     DURING,
   );
   assert.ok(!r.stdout.includes('Explained by'), 'the pinned leg asks for 26.04 itself');
-  assert.match(r.stdout, /Node\.js 22\.23\.2 -> /, 'the drift is still reported');
+  assert.match(r.stdout, LOCKED_NODE_DRIFT, 'the drift is still reported');
 });
 
 test('the migration lane diffs the tools the lock watches', async () => {
@@ -1149,7 +1155,7 @@ test('a repo that pins its runners is not told GitHub moved it', async () => {
   // ubuntu-latest: someone bumped the pin by hand and owns the upgrade.
   const r = await guardAcrossTheMove({ workflows: path.join(FIXTURES, 'workflows') }, DURING);
   assert.ok(!r.stdout.includes('Explained by'), 'no floating label, no migration to blame');
-  assert.match(r.stdout, /Node\.js 22\.23\.2 -> /, 'the drift is still reported');
+  assert.match(r.stdout, LOCKED_NODE_DRIFT, 'the drift is still reported');
 });
 
 test('with no job id, a sibling pinned to the new image withholds the explanation', async () => {
@@ -1158,7 +1164,7 @@ test('with no job id, a sibling pinned to the new image withholds the explanatio
   const where = { workflows: path.join(FIXTURES, 'workflows-pinned-sibling') };
   const blind = await guardAcrossTheMove(where, DURING);
   assert.ok(!blind.stdout.includes('Explained by'), 'either job explains this image');
-  assert.match(blind.stdout, /Node\.js 22\.23\.2 -> /, 'the drift is still reported');
+  assert.match(blind.stdout, LOCKED_NODE_DRIFT, 'the drift is still reported');
 
   const mine = await guardAcrossTheMove({ ...where, env: inJob('build') }, DURING);
   assert.match(mine.stdout, /Explained by the scheduled ubuntu-latest migration/);
