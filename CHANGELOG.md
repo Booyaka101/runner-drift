@@ -167,8 +167,11 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - `--tools constructor`, or a lock file with a tool of that name, crashed in the
   manifest resolver: the candidate-names table answered with a function, and a
-  function is not a list of names. The three tables keyed by a tool or a command
-  read as data now, like the label ones.
+  function is not a list of names. Every table keyed by a tool or a command reads
+  as data now, like the label ones. That includes the three the scanner and the
+  prober use, so a `run:` step calling conda's `constructor` CLI, or a
+  `uses: constructor@v1`, no longer becomes a detected tool whose probe recipe
+  is a function.
 
 - A manifest read that failed was remembered as failed. The run reads each
   manifest once, and the memo held the rejected promise, so the lane that asked
@@ -180,7 +183,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Every table keyed by a runner label answered `__proto__` and `constructor`
   with something truthy, so `plan --from constructor` took the resolved-migration
   branch and then reported that `--from` was missing. `deadlineFor`,
-  `pathForLabel` and `migrationFor` all read their tables as data now.
+  `pathForLabel`, `migrationFor`, `nextBrownout` and `retirementStatus` all read
+  their tables as data now. The last two returned a deadline with no migration
+  targets, and `guard --fail-on-retirement` crashed writing the annotation that
+  tells you where to move.
 
 - `ImageOS=__proto__` resolved to a label. The env value indexed the
   `ImageOS` -> label table directly, so any property of `Object.prototype` came

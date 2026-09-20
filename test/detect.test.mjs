@@ -14,6 +14,7 @@ import {
   SELF_HOSTED,
 } from '../src/detect.mjs';
 import { canonicalTool, manifestCandidates } from '../src/tools.mjs';
+import { isProbeable, probeTool } from '../src/probe.mjs';
 import { FIXTURES } from './helpers.mjs';
 
 test('extracts an inline runs-on label', () => {
@@ -82,6 +83,25 @@ test('a tool named after a property of Object is just an unknown tool', () => {
   for (const name of ['constructor', 'toString', '__proto__']) {
     assert.equal(typeof canonicalTool(name), 'string', name);
     assert.deepEqual(manifestCandidates(name), [name], name);
+    assert.equal(isProbeable(name), false, name);
+    assert.equal(probeTool(name).reason, 'no probe recipe', name);
+  }
+});
+
+test('a step that runs a command named after Object is not a detected tool', () => {
+  // conda ships a real `constructor` CLI, so this reaches the scanner from a
+  // plain workflow. Inherited, it used to become a tool with no probe recipe.
+  for (const name of ['constructor', 'toString', 'valueOf']) {
+    assert.deepEqual(commandsInScript(`${name} --build .`), [], name);
+    const r = analyseWorkflow(
+      `jobs:
+  a:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: ${name}@v1
+`,
+    );
+    assert.deepEqual(r.tools, [], name);
   }
 });
 

@@ -160,7 +160,7 @@ export function normaliseLabel(raw) {
 
 /** First brownout date on or after `now`, else null. */
 export function nextBrownout(label, now = new Date()) {
-  const dl = DEADLINES[label];
+  const dl = deadlineFor(label);
   if (!dl) return null;
   for (const b of dl.brownouts ?? []) {
     const d = daysUntilDate(b, now);
@@ -171,7 +171,7 @@ export function nextBrownout(label, now = new Date()) {
 
 /** Retirement countdown for a label, or null when it has no announced deadline. */
 export function retirementStatus(label, now = new Date()) {
-  const dl = DEADLINES[label];
+  const dl = deadlineFor(label);
   if (!dl) return null;
   const daysToUnsupported = daysUntilDate(dl.fullyUnsupported, now);
   const brownout = nextBrownout(label, now);

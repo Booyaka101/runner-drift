@@ -10,6 +10,7 @@ import { readdir, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { COMMAND_ALIASES, SETUP_ACTION_ALIASES, canonicalTool } from './tools.mjs';
 import { isFloating, normaliseLabel } from './labels.mjs';
+import { lookup } from './tables.mjs';
 
 const WORKFLOW_EXT = /\.ya?ml$/i;
 const LABEL_SHAPE = /^(ubuntu|windows|macos)-[a-z0-9.-]+$/i;
@@ -113,7 +114,7 @@ export function commandsInScript(script) {
     const token = s.split(/\s+/)[0];
     if (!token) continue;
     const base = token.split(/[\\/]/).pop().replace(/\.(exe|cmd|bat)$/i, '');
-    if (COMMAND_ALIASES[base.toLowerCase()]) found.add(base.toLowerCase());
+    if (lookup(COMMAND_ALIASES, base.toLowerCase())) found.add(base.toLowerCase());
   }
   return [...found];
 }
@@ -536,7 +537,7 @@ function actionSlug(ref) {
 export function setupTools(usesSites) {
   const tools = new Set();
   for (const { ref } of usesSites) {
-    const tool = SETUP_ACTION_ALIASES[actionSlug(ref)];
+    const tool = lookup(SETUP_ACTION_ALIASES, actionSlug(ref));
     if (tool) tools.add(tool);
   }
   return [...tools];

@@ -36,6 +36,16 @@ test('nextBrownout is null for unknown labels', () => {
   assert.equal(nextBrownout('not-a-label', NOW), null);
 });
 
+test('a runs-on named after a property of Object has no deadline', () => {
+  // The bogus status that Object.prototype handed back had no migrateTo, and
+  // the annotation that follows a finding joins that list into a sentence.
+  for (const name of ['constructor', 'toString', 'valueOf']) {
+    assert.equal(nextBrownout(name, NOW), null, name);
+    assert.equal(retirementStatus(name, NOW), null, name);
+    assert.deepEqual(retirementFindings([{ label: name, file: 'ci.yml', line: 5, col: 14 }], { now: NOW, days: 90 }), [], name);
+  }
+});
+
 /* -------------------------------------------------------- retirementStatus */
 
 test('retirementStatus before deprecation starts', () => {
