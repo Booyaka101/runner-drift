@@ -265,11 +265,22 @@ function scanner(opts) {
  * One manifest read per label per run. Mid-window the migration lane and the
  * drift diff both want the old image's manifest, which is a 300KB read.
  */
-function loaderFor(load) {
+export function loaderFor(load) {
   const seen = new Map();
   return (label, opts) => {
     const key = `${label}@${opts?.ref ?? 'main'}`;
-    if (!seen.has(key)) seen.set(key, load(label, opts));
+    if (!seen.has(key)) {
+      // A failed read is not kept. The lane that asked second would replay the
+      // rejection with no request of its own, and a manifest that was merely
+      // unreachable for a moment reads as every locked tool having been removed.
+      const read = Promise.resolve()
+        .then(() => load(label, opts))
+        .catch((err) => {
+          seen.delete(key);
+          throw err;
+        });
+      seen.set(key, read);
+    }
     return seen.get(key);
   };
 }

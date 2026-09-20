@@ -156,6 +156,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   migration lane at the wrong `runs-on:` line. The map now ends where YAML ends
   it, at the next top-level key.
 
+- A manifest read that failed was remembered as failed. The run reads each
+  manifest once, and the memo held the rejected promise, so the lane that asked
+  second got the first one's network error without a request of its own. A 502
+  in the migration lane could have left the drift lane with no manifest at all,
+  which reads as every locked tool having been removed. Only a read that worked
+  is kept.
+
 - Every table keyed by a runner label answered `__proto__` and `constructor`
   with something truthy, so `plan --from constructor` took the resolved-migration
   branch and then reported that `--from` was missing. `deadlineFor`,

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
-import { runGuard, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
+import { loaderFor, runGuard, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
 import { readLock, writeLock, SCHEMA_VERSION } from '../src/lock.mjs';
 import { captureIO, fixtureLoader, FIXTURES } from './helpers.mjs';
 
@@ -303,6 +303,21 @@ test('runGuard writes the lock by default, with no update-lock key at all', asyn
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test('a manifest read that failed is retried, not replayed from the memo', async () => {
+  // Both lanes want the same manifest mid-window, and the second one asking
+  // must not be handed the first one's network error with no request of its own.
+  let calls = 0;
+  const load = loaderFor(async (label) => {
+    calls += 1;
+    if (calls === 1) throw new Error('502 from raw.githubusercontent.com');
+    return { label, call: calls };
+  });
+  await assert.rejects(load('ubuntu-24.04'), /502/);
+  assert.deepEqual(await load('ubuntu-24.04'), { label: 'ubuntu-24.04', call: 2 });
+  assert.deepEqual(await load('ubuntu-24.04'), { label: 'ubuntu-24.04', call: 2 }, 'one read once it works');
+  assert.equal(calls, 2);
 });
 
 test('the drift summary does not claim a lock update that --no-update-lock stopped', async () => {

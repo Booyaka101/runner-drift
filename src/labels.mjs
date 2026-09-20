@@ -303,7 +303,7 @@ export function migratingLabels() {
  * @returns {object|null} null when the label has no announced migration
  */
 export function migrationStatus(label, { now = new Date(), imageOS = null } = {}) {
-  const m = MIGRATIONS[label];
+  const m = migrationFor(label);
   if (!m) return null;
 
   // The changelog states calendar dates, so both ends are inside the window.

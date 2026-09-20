@@ -464,6 +464,15 @@ test('below the threshold it reports and exits 0', async () => {
   assert.equal(r.stderr, '');
 });
 
+test('in the window the exit turns on whether this runner has moved', async () => {
+  const at = (ImageOS) =>
+    guard({ tools: 'node', 'fail-on-migration': '0' }, { ImageOS, GITHUB_JOB: 'build' }, DURING);
+  assert.equal((await at('ubuntu24')).code, EXIT_DRIFT, 'the change is still ahead of this runner');
+  assert.equal((await at('ubuntu26')).code, EXIT_OK, 'this runner already has it');
+  const blind = await guard({ tools: 'node', 'fail-on-migration': '0' }, {}, DURING);
+  assert.equal(blind.code, EXIT_DRIFT, 'which of the two this job got cannot be told');
+});
+
 test('a rollout still running late is an error annotation, not a red build', async () => {
   // GitHub has slipped both previous `latest` moves. Nothing here is broken by
   // that, and a threshold that cannot turn the failure off is one people fix by
@@ -646,12 +655,14 @@ test('a matrix leg is trusted for the two images in the window and no others', (
   assert.match(off.note, /through a matrix/);
 });
 
-test('a label that names a property of Object is in none of the tables', () => {
+test('a label that names a property of Object is in none of the tables', async () => {
   // Labels come out of workflow files, so every table keyed by one is data.
   for (const key of ['__proto__', 'constructor', 'toString']) {
     assert.equal(migrationFor(key), null, key);
     assert.equal(deadlineFor(key), null, key);
     assert.equal(pathForLabel(key), null, key);
+    assert.equal(migrationStatus(key, { now: DURING }), null, key);
+    assert.equal(await surveyMigration({ label: key, now: DURING }), null, key);
   }
 });
 

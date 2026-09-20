@@ -264,16 +264,22 @@ there is no workflow directory and reports nothing, rather than guessing from th
 image alone. What it reports depends on where today sits in the
 window, and on the `ImageOS` the runner exported:
 
-| Phase | `ImageOS` | Reported as |
-| --- | --- | --- |
-| Before the window | — | `::notice`, the window and the countdown |
-| Before the window | the new image | `::notice`, this runner moved ahead of the announced window |
-| In the window | the old image | `::warning`, this runner has not moved yet and the diff is still ahead of you |
-| In the window | the new image | `::notice`, the migration has reached this runner |
-| In the window | absent, or from another job | `::warning`, which of the two this job got cannot be told |
-| After the window | the new image | `::notice`, the move is done |
-| After the window | the old image | `::error`, an anomaly rather than drift |
-| Any phase | an image from neither end | `::error`, and the build fails |
+| Phase | `ImageOS` | Reported as | Fails the job? |
+| --- | --- | --- | --- |
+| Before the window | — | `::notice`, the window and the countdown | within the threshold |
+| Before the window | the new image | `::notice`, this runner moved ahead of the announced window | never |
+| In the window | the old image | `::warning`, this runner has not moved yet and the diff is still ahead of you | yes |
+| In the window | the new image | `::notice`, the migration has reached this runner | never |
+| In the window | absent, or from another job | `::warning`, which of the two this job got cannot be told | yes |
+| After the window | the new image | `::notice`, the move is done | never |
+| After the window | the old image | `::error`, an anomaly rather than drift | no |
+| Any phase | an image from neither end | `::error`, the label means something nobody announced | always |
+
+The threshold counts the days to the *start* of the window, so it decides the
+first row only. Once the window is open the change is no longer a countdown, and
+the rows that fail are the ones where it is still ahead of this runner. A runner
+that has already moved is green, which is what makes pinning the label, or
+letting it land, the way out rather than deleting the input.
 
 The last two rows are the ones worth having. A runner still serving Ubuntu 24.04
 in December, when the label is supposed to mean 26.04 everywhere, is not a
