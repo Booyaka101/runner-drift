@@ -76,7 +76,7 @@ async function version() {
     const pkg = JSON.parse(await readFile(path.join(HERE, '..', 'package.json'), 'utf8'));
     return pkg.version;
   } catch {
-    return '1.4.0';
+    return '1.4.1';
   }
 }
 
