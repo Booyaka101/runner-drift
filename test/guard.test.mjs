@@ -5,7 +5,7 @@ import os from 'node:os';
 import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises';
 import { runGuard, EXIT_OK, EXIT_DRIFT, EXIT_USAGE } from '../src/cli.mjs';
 import { readLock, writeLock, SCHEMA_VERSION } from '../src/lock.mjs';
-import { captureIO, FIXTURES } from './helpers.mjs';
+import { captureIO, fixtureLoader, FIXTURES } from './helpers.mjs';
 
 async function tmp() {
   return mkdtemp(path.join(os.tmpdir(), 'runner-drift-test-'));
@@ -18,9 +18,9 @@ async function tmp() {
 const IMAGE = '20260720.234.2';
 const ENV = { ImageVersion: IMAGE, ImageOS: 'ubuntu22' };
 
-async function guard(opts, env = ENV) {
+async function guard(opts, env = ENV, deps = {}) {
   const cap = captureIO();
-  const code = await runGuard({ summary: true, 'update-lock': true, ...opts }, cap.io, env);
+  const code = await runGuard({ summary: true, 'update-lock': true, ...opts }, cap.io, env, deps);
   return { code, stdout: cap.stdout, stderr: cap.stderr };
 }
 
@@ -338,13 +338,16 @@ test('a lock this version cannot read does not swallow the self-hosted skip', as
   const lockFile = path.join(dir, 'runner-lock.json');
   try {
     await writeFile(lockFile, JSON.stringify({ schemaVersion: 99, label: 'ubuntu-24.04' }), 'utf8');
-    const r = await guard({
-      tools: 'node',
-      'lock-file': lockFile,
-      'fail-on-migration': '0',
-      'as-of': '2026-09-20',
-      workflows: path.join(FIXTURES, 'workflows-migration'),
-    }, {});
+    const r = await guard(
+      {
+        tools: 'node',
+        'lock-file': lockFile,
+        'fail-on-migration': '0',
+        workflows: path.join(FIXTURES, 'workflows-migration'),
+      },
+      {},
+      { now: new Date('2026-09-20T00:00:00Z'), loadManifest: fixtureLoader({ 'ubuntu-24.04': 'ubuntu-24.04@2026-09' }) },
+    );
     assert.equal(r.code, EXIT_OK, 'no ImageVersion is a skip, not a lock error');
     assert.match(r.stdout, /not a GitHub-hosted runner/);
   } finally {

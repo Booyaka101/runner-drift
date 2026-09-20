@@ -232,18 +232,18 @@ function summarise(io, items, keyOf, lineOf) {
   }
 }
 
-/**
- * One workflow scan per `guard` run. Both lint lanes, the tool fallback, the
- * label fallback and the drift explanation want the same directory, and reading
- * it five times to get the same answer is five times the IO for nothing.
- */
 /** Run `fn` at most once, however many lanes ask for its answer. */
 function once(fn) {
   let pending = null;
   return () => (pending ??= fn());
 }
 
-/** One workflow scan per command, shared by every lane that wants it. */
+/**
+ * One workflow scan per command. Both lint lanes, the tool fallback, the label
+ * fallback, the drift explanation and the runner lane want the same directory,
+ * and reading it five times to get the same answer is five times the IO for
+ * nothing.
+ */
 function scanner(opts) {
   return once(() => detect(opts.workflows ?? path.join('.github', 'workflows')));
 }
