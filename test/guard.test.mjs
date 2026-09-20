@@ -123,7 +123,7 @@ test('drift is reported with a ::warning and exits 0 by default', async () => {
   }
 });
 
-test('a lock file naming a tool after a property of Object diffs like any other', async () => {
+test('a lock file naming a tool after a property of Object is handled like any other', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');
   try {
@@ -137,12 +137,17 @@ test('a lock file naming a tool after a property of Object diffs like any other'
         + `"__proto__":{"versions":["2.0.0"],"source":"manifest"}}}`,
       'utf8',
     );
-    const r = await guard({ 'lock-file': lockFile, 'update-lock': false }, ENV, {
+    const r = await guard({ 'lock-file': lockFile, json: true }, ENV, {
       loadManifest: fixtureLoader(),
     });
     assert.equal(r.code, EXIT_OK);
-    assert.match(r.stdout, /constructor 1\.0\.0 -> \(absent\)/);
-    assert.match(r.stdout, /__proto__ 2\.0\.0 -> \(absent\)/);
+    assert.match(r.stdout, /constructor: no probe recipe here/);
+    assert.match(r.stdout, /__proto__: no probe recipe here/);
+    assert.deepEqual(jsonOf(r.stdout).notCompared.sort(), ['__proto__', 'constructor']);
+    // Carried into the rewritten lock as their own keys, not onto a prototype.
+    const after = JSON.parse(await readFile(lockFile, 'utf8'));
+    assert.ok(Object.hasOwn(after.tools, '__proto__'));
+    assert.deepEqual(after.tools.constructor.versions, ['1.0.0']);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
@@ -235,6 +240,39 @@ test('a manifest that cannot be read at all is not every locked tool removed', a
     assert.doesNotMatch(r.stdout, /REMOVED/);
     const after = await readLock(lockFile);
     assert.deepEqual(after.tools.Bazel.versions, ['9.1.0'], 'kept, or the next run calls it ADDED');
+  } finally {
+    api.restore();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('a tool the readme does not list is not removed unless the machine agrees', async () => {
+  const dir = await tmp();
+  const lockFile = path.join(dir, 'runner-lock.json');
+  const api = stubApi(() => ({ status: 403, body: '', headers: { 'x-ratelimit-remaining': '0' } }));
+  try {
+    // Fortran has no probe recipe, so the readme was its only observer and a
+    // heading it does not appear under says nothing about the image.
+    await writeLock(
+      {
+        label: 'ubuntu-22.04',
+        imageOS: 'ubuntu22',
+        imageVersion: IMAGE,
+        tools: { Fortran: { versions: ['13.2.0'], source: 'manifest' } },
+      },
+      lockFile,
+    );
+    const r = await guard(
+      { tools: 'Fortran', 'lock-file': lockFile, 'fail-on': 'major', json: true, summary: false },
+      ENV,
+      { loadManifest: fixtureLoader() },
+    );
+    assert.equal(r.code, EXIT_OK);
+    assert.match(r.stdout, /Fortran: no probe recipe here and not listed/);
+    assert.doesNotMatch(r.stdout, /REMOVED/);
+    assert.deepEqual(jsonOf(r.stdout).notCompared, ['Fortran'], 'named in the document, not only on stdout');
+    const after = await readLock(lockFile);
+    assert.deepEqual(after.tools.Fortran.versions, ['13.2.0']);
   } finally {
     api.restore();
     await rm(dir, { recursive: true, force: true });

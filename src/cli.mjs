@@ -805,7 +805,19 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
         observed[t] = toolsEntry(versions, 'manifest');
       }
       for (const t of missing) {
-        infraWarnings.push(`${t}: not probeable here and not listed on the ${label} manifest — skipped.`);
+        // A tool with a probe recipe was looked for on this machine and not
+        // found, so a manifest that does not list it either is evidence it has
+        // gone. A tool with no recipe had the manifest as its only observer,
+        // and the readme is a curated list under headings that get renamed, so
+        // absence from it is not a removal worth reddening a build over.
+        if (isProbeable(t)) {
+          infraWarnings.push(`${t}: not found on this runner and not listed on the ${label} manifest.`);
+        } else {
+          unobserved.add(t);
+          infraWarnings.push(
+            `${t}: no probe recipe here and not listed on the ${label} manifest — not compared.`,
+          );
+        }
       }
     } else {
       for (const t of needManifest) {
@@ -947,6 +959,9 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
 
   if (opts.json) {
     const payload = { label, fromLabel: lock.label ?? null, from: lock.imageVersion, to: imageVersion, approximate, written: updateLock, diffs, attribution: attributionMap };
+    // The tools missing from `diffs` and why, or a consumer reading the document
+    // sees a shorter list than the lock holds with the reason only on stdout.
+    if (unobserved.size) payload.notCompared = [...unobserved];
     payload.explains = explained?.label ?? null;
     if (retirement) payload.retirement = retirement;
     if (migration) payload.migration = { ...migration, explains: explained?.label ?? null };

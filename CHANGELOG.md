@@ -202,6 +202,15 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   is not removed: those tools are left out of the diff, and they keep the entry
   the lock already has so the next run does not read them as added either.
 
+  A tool the manifest did answer for, by not listing it, is the same case when
+  nothing else could have seen it: with no probe recipe the readme is its only
+  observer, and the readme is a curated page whose headings get renamed. Those
+  are left out of the diff too. A tool that does have a probe recipe was looked
+  for on the machine and not found, so a manifest that does not list it either
+  is still reported as REMOVED. `--json` names everything left out under
+  `notCompared`, since the `diffs` array would otherwise be quietly shorter than
+  the lock with the reason only on stdout.
+
 - A job id the run could not be placed by let one workflow file speak for
   another. Inside a reusable workflow `GITHUB_WORKFLOW_REF` names the caller,
   so the job is matched on its id alone, and an id is unique in a file rather

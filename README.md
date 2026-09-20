@@ -814,6 +814,16 @@ will actually **execute**. Tools with no probe recipe fall back to the manifest 
 that exact image version, and the source is recorded so a source change is never
 mistaken for a version change.
 
+A tool the manifest cannot answer for is left out of the diff rather than
+reported as removed: a rate limit is not a tool being deleted. That covers both
+an unreadable manifest and a tool with no probe recipe that the readme does not
+list, since the readme is a curated page whose headings get renamed. Those names
+go in `--json` under `notCompared`, the reason is a `::warning` in the log, and
+they keep the entry the lock already had so the next run does not read them as
+added. A tool that does have a probe recipe is treated differently: the probe
+looked for it on this machine and did not find it, so a manifest that does not
+list it either is reported as removed.
+
 ## Supported labels
 
 `ubuntu-22.04`, `ubuntu-24.04`, `ubuntu-26.04` (+ `-arm`), `windows-2022`,
