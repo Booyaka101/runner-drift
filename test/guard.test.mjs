@@ -46,6 +46,28 @@ test('an unknown ImageOS is a warning and a skip, not a crash', async () => {
   }
 });
 
+test('--json off an unknown image still prints what the lanes found', async () => {
+  const dir = await tmp();
+  try {
+    const r = await guard(
+      {
+        tools: 'node',
+        json: true,
+        'lock-file': path.join(dir, 'runner-lock.json'),
+        'fail-on-migration': '0',
+        workflows: path.join(FIXTURES, 'workflows-quoted-job'),
+      },
+      { ImageVersion: IMAGE, ImageOS: 'plan9' },
+      { now: new Date('2026-09-20T00:00:00Z'), loadManifest: fixtureLoader({ 'ubuntu-24.04': 'ubuntu-24.04@2026-09' }) },
+    );
+    assert.match(r.stdout, /Unknown runner label/);
+    const j = JSON.parse(r.stdout.slice(r.stdout.indexOf('{')));
+    assert.equal(j.migration.surveys[0].label, 'ubuntu-latest');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('first run with no lock creates one and exits 0 with "baseline recorded"', async () => {
   const dir = await tmp();
   const lockFile = path.join(dir, 'runner-lock.json');

@@ -258,7 +258,10 @@ labels with an announced move and fails while the window is still ahead of you:
 ```
 
 It is opt-in, like `fail-on-retirement`: without the input, `guard` does not fetch
-the two manifests at all. What it reports depends on where today sits in the
+the two manifests at all. It reads the workflow files to know which floating
+labels you actually ask for, so it needs the checkout above; without one it says
+there is no workflow directory and reports nothing, rather than guessing from the
+image alone. What it reports depends on where today sits in the
 window, and on the `ImageOS` the runner exported:
 
 | Phase | `ImageOS` | Reported as |

@@ -254,13 +254,39 @@ function matrixLabels(lines) {
   return found;
 }
 
+/**
+ * One pass over a document for everything the label scanners want: the
+ * positioned `runs-on:` values, the sets they came in, the matrix fallback and
+ * the job id per line. The last two are lazy because only some callers want
+ * them, and `analyseWorkflow` hands one walk to all four rather than repeating
+ * it per extractor.
+ */
+function walkLabels(text) {
+  const lines = String(text ?? '').split(/\r?\n/);
+  const scan = scanRunsOn(lines);
+  let matrix = null;
+  let jobs = null;
+  return {
+    ...scan,
+    lines,
+    get matrix() {
+      return (matrix ??= scan.expression ? matrixLabels(lines) : []);
+    },
+    get jobs() {
+      return (jobs ??= jobKeys(lines));
+    },
+  };
+}
+
 /** Pull `runs-on:` labels (inline scalar, inline flow list, block list, matrix refs). */
 export function extractLabels(text) {
-  const lines = String(text ?? '').split(/\r?\n/);
-  const { found, expression } = scanRunsOn(lines);
+  return labelsIn(walkLabels(text));
+}
+
+function labelsIn({ lines, found, expression, matrix }) {
   const labels = new Set(found.map((f) => f.label));
   if (expression) {
-    for (const { label } of matrixLabels(lines)) labels.add(label);
+    for (const { label } of matrix) labels.add(label);
     for (const line of lines) {
       if (/(^|\s)self-hosted(\s|$|,|\]|')/.test(line) && /runs-on|matrix|os:|- /.test(line)) {
         labels.add(SELF_HOSTED);
@@ -312,15 +338,11 @@ function jobKeys(lines) {
  * line. Its job is right, but which leg of the matrix any one runner is serving
  * is not written anywhere in the file.
  */
-function labelSitesWhere(text, file, keep) {
-  const lines = String(text ?? '').split(/\r?\n/);
-  const { found, expression } = scanRunsOn(lines);
-  const jobs = jobKeys(lines);
+function labelSitesWhere(walk, file, keep) {
+  const { found, expression, matrix, jobs } = walk;
   const seen = new Set();
   const sites = [];
-  const all = expression
-    ? [...found, ...matrixLabels(lines).map((m) => ({ ...m, viaMatrix: true }))]
-    : found;
+  const all = expression ? [...found, ...matrix.map((m) => ({ ...m, viaMatrix: true }))] : found;
   for (const { label, line, col, viaMatrix } of all) {
     if (!keep(label)) continue;
     const key = `${label}@${line}:${col}`;
@@ -332,14 +354,16 @@ function labelSitesWhere(text, file, keep) {
   return sites;
 }
 
+const isPinned = (label) => label !== SELF_HOSTED && !isFloating(label);
+
 /** Pinned image labels: what the retirement lane dates. */
 export function extractLabelSites(text, file = null) {
-  return labelSitesWhere(text, file, (l) => l !== SELF_HOSTED && !isFloating(l));
+  return labelSitesWhere(walkLabels(text), file, isPinned);
 }
 
 /** Floating labels: what the migration lane dates, and nothing else can. */
 export function extractFloatingSites(text, file = null) {
-  return labelSitesWhere(text, file, isFloating);
+  return labelSitesWhere(walkLabels(text), file, isFloating);
 }
 
 /**
@@ -414,8 +438,10 @@ export function siteInJob(site, here) {
  * and no labels, since which runner serves them is not decidable from the file.
  */
 export function extractRunsOnTargets(text, file = null) {
-  const lines = String(text ?? '').split(/\r?\n/);
-  const { targets } = scanRunsOn(lines);
+  return targetsIn(walkLabels(text), file);
+}
+
+function targetsIn({ targets }, file) {
   return targets.map((t) => ({
     labels: [...new Set(t.labels)],
     expression: t.expression,
@@ -514,10 +540,12 @@ export function extractSetupActions(text) {
 
 /** Analyse one workflow document. */
 export function analyseWorkflow(text, file = null) {
-  const labels = extractLabels(text);
-  const labelSites = extractLabelSites(text, file);
-  const floatingSites = extractFloatingSites(text, file);
-  const runsOnTargets = extractRunsOnTargets(text, file);
+  const walk = walkLabels(text);
+  const labels = labelsIn(walk);
+  const sites = labelSitesWhere(walk, file, () => true);
+  const labelSites = sites.filter((s) => isPinned(s.label));
+  const floatingSites = sites.filter((s) => isFloating(s.label));
+  const runsOnTargets = targetsIn(walk, file);
   const uses = extractUses(text, file);
   const commands = new Set();
   for (const script of extractRunScripts(text)) {

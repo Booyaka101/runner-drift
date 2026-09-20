@@ -249,6 +249,31 @@ function scanner(opts) {
 }
 
 /**
+ * One manifest read per label per run. Mid-window the migration lane and the
+ * drift diff both want the old image's manifest, which is a 300KB read.
+ */
+function loaderFor(load) {
+  const seen = new Map();
+  return (label, opts) => {
+    const key = `${label}\${opts?.ref ?? 'main'}`;
+    if (!seen.has(key)) seen.set(key, load(label, opts));
+    return seen.get(key);
+  };
+}
+
+/**
+ * The `--json` document for a run that never reached the drift diff: whatever
+ * the lanes that do not need a lock file found, and nothing invented.
+ */
+function laneDocument({ runners = null, retirement = null, migration = null }) {
+  const payload = {};
+  if (runners) payload.runners = runners;
+  if (retirement) payload.retirement = retirement;
+  if (migration) payload.migration = migration;
+  return payload;
+}
+
+/**
  * The workflow scan the two lint lanes start from, or null when there is no
  * workflow directory — which is a notice on both streams, not an error.
  */
@@ -564,6 +589,7 @@ async function checkOwnRunner(opts, io, env, deps, window, scan) {
 export async function runGuard(opts, io = process, env = process.env, deps = {}) {
   const lockFile = opts['lock-file'] ?? DEFAULT_LOCK_FILE;
   const scan = scanner(opts);
+  const load = loaderFor(deps.loadManifest ?? loadManifest);
   // The migration lane diffs the tools the lock watches, which is not always
   // what the workflow files mention. It reads the lock leniently: a lock this
   // version cannot parse is an error for the drift lane below, which is the
@@ -602,7 +628,10 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   let migration = null;
   if (opts['fail-on-migration'] !== undefined) {
     const known = await getLock().catch(() => null);
-    migration = await checkMigration(opts, io, deps.now ?? new Date(), imageOS, env, scan, known, deps);
+    migration = await checkMigration(opts, io, deps.now ?? new Date(), imageOS, env, scan, known, {
+      ...deps,
+      loadManifest: load,
+    });
     if (!migration) return EXIT_USAGE;
     if (!opts.json && migration.surveys.length) {
       out(io.stdout, migrationReport(migration.surveys));
@@ -635,13 +664,8 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     // version with a date on it. Without a token this is a no-op and the skip
     // above is the whole output, exactly as in 1.1.0.
     const own = await checkOwnRunner(opts, io, env, deps, window, scan);
-    if (opts.json && (own || migration || retirement)) {
-      const payload = {};
-      if (own) payload.runners = own;
-      if (retirement) payload.retirement = retirement;
-      if (migration) payload.migration = migration;
-      out(io.stdout, JSON.stringify(payload, null, 2));
-    }
+    const doc = laneDocument({ runners: own, retirement, migration });
+    if (opts.json && Object.keys(doc).length) out(io.stdout, JSON.stringify(doc, null, 2));
     if (retiring) reportRetirement(io, retiring);
     if (migrating) reportMigration(io, migrating);
     if (own?.failing) reportDeprecation(io, own);
@@ -659,6 +683,8 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
     const msg = `Unknown runner label (ImageOS="${imageOS ?? '(unset)'}") — skipping. Known: ${knownLabels().join(', ')}`;
     out(io.stdout, `::warning title=runner-drift::${msg}`);
     out(io.stdout, msg);
+    const doc = laneDocument({ retirement, migration });
+    if (opts.json && Object.keys(doc).length) out(io.stdout, JSON.stringify(doc, null, 2));
     if (retiring) reportRetirement(io, retiring);
     if (migrating) reportMigration(io, migrating);
     return retiring || migrating ? EXIT_DRIFT : EXIT_OK;
@@ -706,7 +732,7 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
         manifest = await manifestAtSha(label, attribution0.commit.sha);
       }
       if (!manifest) {
-        const m = await loadManifest(label);
+        const m = await load(label);
         manifest = m.skipped ? null : m;
       }
     } catch (err) {
