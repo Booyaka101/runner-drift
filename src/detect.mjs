@@ -140,20 +140,6 @@ function labelColumn(start, raw) {
 }
 
 /**
- * Every `runs-on:` value in a document, positioned. `expression` reports
- * whether any value was a `${{ … }}` reference, which is what makes the
- * matrix fallback below kick in.
- *
- * Two shapes here are load-bearing for linear time, and both were quadratic
- * before 1.2.0 (CodeQL js/polynomial-redos). Indentation is `[ \t]`, not `\s`,
- * and the value is `([^\r\n]*)` with no `$`. The pair matters: `\s*(.*)$` lets
- * both quantifiers match a space, and `$` can fail because `.` excludes line
- * terminators, so one stray carriage return on a long line makes the engine try
- * every split of the whitespace between them. Without a `$` there is nothing to
- * fail, so nothing to backtrack. For a line with no terminator in it — which is
- * every line, since the caller split on newlines — both captures are unchanged.
- */
-/**
  * One `runs-on:`-shaped value, from the line its key is on: a scalar, a flow
  * sequence, or a block list below. Returns the last line index it consumed.
  *
@@ -209,6 +195,20 @@ function readTarget(lines, i, baseIndent, rawValue, push) {
   return { end, expression };
 }
 
+/**
+ * Every `runs-on:` value in a document, positioned. `expression` reports
+ * whether any value was a `${{ … }}` reference, which is what makes the
+ * matrix fallback below kick in.
+ *
+ * Two shapes are load-bearing for linear time, and both were quadratic
+ * before 1.2.0 (CodeQL js/polynomial-redos). Indentation is `[ \t]`, not `\s`,
+ * and the value is `([^\r\n]*)` with no `$`. The pair matters: `\s*(.*)$` lets
+ * both quantifiers match a space, and `$` can fail because `.` excludes line
+ * terminators, so one stray carriage return on a long line makes the engine try
+ * every split of the whitespace between them. Without a `$` there is nothing to
+ * fail, so nothing to backtrack. For a line with no terminator in it — which is
+ * every line, since the caller split on newlines — both captures are unchanged.
+ */
 function scanRunsOn(lines) {
   const found = [];
   // `found` is flat, one entry per label, because the retirement lane annotates
