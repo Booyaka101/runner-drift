@@ -156,6 +156,14 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   migration lane at the wrong `runs-on:` line. The map now ends where YAML ends
   it, at the next top-level key.
 
+- The line that credits the migration for tool drift read `direct` without a job
+  id, so a repo with one job on `ubuntu-latest` and another pinned to
+  `ubuntu-26.04` was told GitHub moved it when the pinned job was the one that
+  ran. With no `GITHUB_JOB` either job explains the image, and the lane that
+  attributes `ImageOS` has always said so. Now both do.
+
+- Every countdown said "(1 days)" on the last day before the date it counts to.
+
 - A manifest read that failed was remembered as failed. The run reads each
   manifest once, and the memo held the rejected promise, so the lane that asked
   second got the first one's network error without a request of its own. A 502

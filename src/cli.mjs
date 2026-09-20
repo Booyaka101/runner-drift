@@ -399,6 +399,7 @@ async function explainDrift({ migration, lock, label, scan, env }) {
   const m = migrationBetween(lock.label, label);
   if (!m) return null;
   const scanned = await scan();
+  const here = runningJob(env);
   // `label` is this runner's own: a matrix leg naming it is a pin the repo
   // chose, not the window moving the job, so the explanation is withheld.
   const { direct, asked, rival } = labelOwnership({
@@ -406,9 +407,11 @@ async function explainDrift({ migration, lock, label, scan, env }) {
     observed: label,
     sites: scanned.floatingSites,
     others: scanned.labelSites,
-    here: runningJob(env),
+    here,
   });
-  return direct || (asked && !rival) ? m : null;
+  // `direct` without a job id says only that some job in the repo asks for the
+  // label, which is not this one. attributeImageOS scopes it the same way.
+  return (here && direct) || (asked && !rival) ? m : null;
 }
 
 /** One stderr line per floating label whose migration fails the gate. */

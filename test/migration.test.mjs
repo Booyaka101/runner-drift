@@ -875,6 +875,20 @@ test('a repo that pins its runners is not told GitHub moved it', async () => {
   assert.match(r.stdout, /Node\.js 22\.23\.2 -> /, 'the drift is still reported');
 });
 
+test('with no job id, a sibling pinned to the new image withholds the explanation', async () => {
+  // build: ubuntu-latest, compat: ubuntu-26.04. This runner is on 26.04 and
+  // nothing says which of the two jobs it is, so the move is not attributable.
+  const where = { workflows: path.join(FIXTURES, 'workflows-pinned-sibling') };
+  const blind = await guardAcrossTheMove(where, DURING);
+  assert.ok(!blind.stdout.includes('Explained by'), 'either job explains this image');
+  assert.match(blind.stdout, /Node\.js 22\.23\.2 -> /, 'the drift is still reported');
+
+  const mine = await guardAcrossTheMove({ ...where, env: inJob('build') }, DURING);
+  assert.match(mine.stdout, /Explained by the scheduled ubuntu-latest migration/);
+  const theirs = await guardAcrossTheMove({ ...where, env: inJob('compat') }, DURING);
+  assert.ok(!theirs.stdout.includes('Explained by'), 'compat asks for 26.04 by name');
+});
+
 test('the explanation follows the job, not the repo, when Actions says which job', async () => {
   const mine = await guardAcrossTheMove({ env: inJob('build') }, DURING);
   assert.match(mine.stdout, /Explained by the scheduled ubuntu-latest migration/);

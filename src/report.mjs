@@ -30,10 +30,12 @@ import {
 
 export { daysUntil };
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
 /** `(82 days)` / `(60 days ago)` — the countdown suffix both lanes print. */
 export function countdown(days) {
   if (days === null || days === undefined) return '';
-  return days < 0 ? `(${Math.abs(days)} days ago)` : `(${days} days)`;
+  return days < 0 ? `(${plural(Math.abs(days), 'day')} ago)` : `(${plural(days, 'day')})`;
 }
 
 /** `2026-11-02 (82 days)`. A full ISO date-time is trimmed to its date. */
@@ -543,8 +545,6 @@ const RUNNER_BADGE = {
   [RUNNER_STATUS.UNKNOWN_VERSION]: '❔ UNKNOWN-VERSION',
   [RUNNER_STATUS.OK]: '⚪ OK',
 };
-
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 /**
  * `x2` / `x2 (1 offline)`. Whether the group is in service changes how urgent it

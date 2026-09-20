@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { deadlineLines, daysUntil, annotations, stepSummaryMarkdown, planRow } from '../src/report.mjs';
+import {
+  countdown,
+  dateWithCountdown,
+  deadlineLines,
+  daysUntil,
+  annotations,
+  stepSummaryMarkdown,
+  planRow,
+} from '../src/report.mjs';
 import { diffTool } from '../src/diff.mjs';
 
 const NOW = new Date('2026-08-05T00:00:00Z');
@@ -32,6 +40,15 @@ test('macos-14 has its own deadline and brownout schedule', () => {
 
 test('a label with no announced deadline returns null', () => {
   assert.equal(deadlineLines('ubuntu-24.04', NOW), null);
+});
+
+test('the countdown says one day, not 1 days', () => {
+  assert.equal(countdown(1), '(1 day)');
+  assert.equal(countdown(-1), '(1 day ago)');
+  assert.equal(countdown(0), '(0 days)');
+  assert.equal(countdown(2), '(2 days)');
+  assert.equal(countdown(null), '');
+  assert.equal(dateWithCountdown('2026-10-19T00:00:00Z', 1), '2026-10-19 (1 day)');
 });
 
 test('daysUntil counts down and then up', () => {
