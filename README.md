@@ -284,9 +284,16 @@ job, so it counts as evidence about `ubuntu-latest` only when that job asked for
 same repo gets the window from the calendar and a line saying its own image was
 not treated as evidence, rather than a claim that `ubuntu-latest` has gone
 somewhere unrecognised. `GITHUB_JOB` and `GITHUB_WORKFLOW_REF` are what tie the
-runner to a `runs-on:` line, and Actions sets both for you. Where the label is
-reached through a matrix, or the command runs with no `GITHUB_JOB` at all, the
-image is still attributed if it is one of the two the window names.
+runner to a `runs-on:` line, and Actions sets both for you. Inside a reusable
+workflow the ref names the calling file while the job id lives in the callee, so
+the job id decides unless the caller has a job of that name too.
+
+Where the label is reached through a matrix, or the command runs with no
+`GITHUB_JOB` at all, the image is still attributed if it is one of the two the
+window names. Both of those give way to a nearer explanation: a matrix leg that
+names the observed image, and, with no job id to scope to, any job in the repo
+pinned to it. Then you get the calendar and a line saying why the image was not
+treated as evidence.
 
 One part of this needs no input at all. When `guard` finds real tool drift, the
 jump from the lock's image to the runner's image is exactly an announced move,

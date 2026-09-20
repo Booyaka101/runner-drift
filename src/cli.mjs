@@ -255,7 +255,7 @@ function scanner(opts) {
 function loaderFor(load) {
   const seen = new Map();
   return (label, opts) => {
-    const key = `${label}\${opts?.ref ?? 'main'}`;
+    const key = `${label}@${opts?.ref ?? 'main'}`;
     if (!seen.has(key)) seen.set(key, load(label, opts));
     return seen.get(key);
   };

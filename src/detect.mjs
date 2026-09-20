@@ -383,42 +383,41 @@ export function runningJob(env = process.env) {
  * A predicate for "this site is one the running job was scheduled from", over
  * the sites a scan actually produced.
  *
- * The file name is dropped from the comparison when none of the scanned files
- * is the one this run came from: a job inside a reusable workflow reports the
- * caller's file in `GITHUB_WORKFLOW_REF`, and a scan pointed at a copy of the
- * directory need not match it either. The job id still has to agree.
+ * The file name is dropped from the comparison when no scanned site carries
+ * this job id in the file the run reports: a job inside a reusable workflow
+ * reports the calling file in `GITHUB_WORKFLOW_REF` while its id lives in the
+ * callee, and a scan pointed at a copy of the directory need not match either.
+ * The job id still has to agree.
  */
 export function jobMatcher(here, sites = []) {
   if (!here) return () => false;
-  const known =
-    here.file
-    && sites.some(
-      (s) => s.file && path.basename(s.file).toLowerCase() === here.file.toLowerCase(),
-    );
+  const known = Boolean(here.file) && sites.some((site) => siteInJob(site, here));
   const at = known ? here : { ...here, file: null };
   return (site) => siteInJob(site, at);
 }
 
 /**
- * Who asked for `label` here, and whether a matrix leg asks for `observed` too.
+ * Who asked for `label` here, and whether anything else asks for `observed` too.
  *
  * `scoped` is whether a running job was identified at all; without one every
  * site in the repository is in scope and the caller has to decide how much that
  * is worth. `direct` is a plain `runs-on: <label>`, `asked` includes reaching
- * the label through a matrix, and `rival` is a matrix leg naming `observed`,
+ * the label through a matrix, and `rival` is another site naming `observed`,
  * which the runner is as likely to be serving as the floating one.
+ *
+ * Inside one job the only rival is a matrix leg, since a job has one `runs-on:`.
+ * With no job to scope to, every `runs-on: <observed>` in the repo is one.
  */
 export function labelOwnership({ label, observed = null, sites = [], others = [], here = null }) {
   const belongs = jobMatcher(here, [...sites, ...others]);
   const inScope = here ? belongs : () => true;
   const mine = sites.filter((site) => site.label === label && inScope(site));
+  const rivals = others.filter((site) => site.label === observed && inScope(site));
   return {
     scoped: Boolean(here),
     direct: mine.some((site) => !site.viaMatrix),
     asked: mine.length > 0,
-    rival:
-      observed !== null
-      && others.some((site) => site.viaMatrix && site.label === observed && inScope(site)),
+    rival: observed !== null && (here ? rivals.some((site) => site.viaMatrix) : rivals.length > 0),
   };
 }
 

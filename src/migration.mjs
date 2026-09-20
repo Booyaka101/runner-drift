@@ -50,6 +50,12 @@ export function imageDiffs(from, to) {
  * the window names, which is evidence the runner did come from this label: a
  * matrix leg (the file cannot say which leg this runner is), and a run with no
  * `GITHUB_JOB` to match against (`guard` invoked outside a workflow job).
+ *
+ * Neither weak case can report an image from outside the window, so the
+ * `unexpected` anomaly needs a job id. That is deliberate: with no job to scope
+ * to, an unscanned workflow or a `runs-on:` built from an expression would put
+ * an image on this runner that no site in the scan accounts for, and calling
+ * that a broken migration would be an error raised at the wrong repository.
  */
 export function attributeImageOS({ label, imageOS, sites = [], others = [], here = null }) {
   if (!imageOS) return { imageOS: null, note: null };
@@ -66,7 +72,8 @@ export function attributeImageOS({ label, imageOS, sites = [], others = [], here
       imageOS: null,
       note: rival
         ? `These workflows ask for ${observed} by name, so this runner is not evidence about ${label}.`
-        : `This check did not run on ${label}, so its ImageOS is not evidence about the migration.`,
+        : `No GITHUB_JOB says which job this check ran in, and ${observed ?? imageOS} is neither `
+          + `image in the ${label} window, so this runner is not evidence about it.`,
     };
   }
 

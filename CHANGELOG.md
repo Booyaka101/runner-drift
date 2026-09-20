@@ -143,6 +143,21 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   itself, next to the floating label, was GitHub moving you; now it is your own
   pin, and the line is withheld.
 
+- A job running inside a reusable workflow had its image discarded. Actions
+  reports the *calling* workflow in `GITHUB_WORKFLOW_REF` while `GITHUB_JOB` is
+  the id inside the callee, and the scan matched the file first, so the real
+  `runs-on:` line was rejected as somebody else's job. The job id now decides,
+  and the file is only used to break a tie when the caller has a job of the same
+  name.
+
+- With no `GITHUB_JOB` to scope to, a runner's image was read as evidence about
+  the floating label whenever it was one of the two the window names, even
+  though a sibling job pinned to that exact image explains it just as well. A
+  repo with a `compat:` job on `ubuntu-26.04` could report `ubuntu-latest` as
+  migrated a fortnight early. Any `runs-on:` naming the observed image now takes
+  the evidence away, and the note that used to assert "this check did not run on
+  ubuntu-latest", which nothing in that case knew, says what is actually missing.
+
 - `guard --fail-on-migration` diffed the tools named in the workflow files even
   when the lock file listed a different set. The drift lane has always preferred
   the lock, since that is the list it is about to compare. Both lanes now read

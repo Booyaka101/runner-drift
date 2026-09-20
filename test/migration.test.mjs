@@ -457,11 +457,21 @@ test('below the threshold it reports and exits 0', async () => {
 });
 
 test('a stale runner after the window fails whatever the threshold', async () => {
-  const r = await guard({ tools: 'node', 'fail-on-migration': '0' }, { ImageOS: 'ubuntu24' }, AFTER);
+  const env = { ImageOS: 'ubuntu24', GITHUB_JOB: 'build' };
+  const r = await guard({ tools: 'node', 'fail-on-migration': '0' }, env, AFTER);
   assert.equal(r.code, EXIT_DRIFT);
   assert.match(r.stdout, /^::error file=/m);
   assert.match(r.stderr, /anomaly, not drift/);
   assert.ok(!r.stderr.includes('--fail-on-migration 0 is set'), 'an anomaly is not a countdown');
+});
+
+test('without GITHUB_JOB the pinned sibling job holds the anomaly back', async () => {
+  // The same fixture has a job on ubuntu-24.04. With nothing saying which job
+  // this is, that job explains the image as well as a stalled migration does.
+  const r = await guard({ tools: 'node', 'fail-on-migration': '0' }, { ImageOS: 'ubuntu24' }, AFTER);
+  assert.equal(r.code, EXIT_OK);
+  assert.doesNotMatch(r.stdout, /^::error file=/m);
+  assert.match(r.stdout, /ask for ubuntu-24\.04 by name/);
 });
 
 test('a workflow with no floating label produces nothing and exits 0', async () => {
@@ -623,7 +633,50 @@ test('with no GITHUB_JOB the window images are still attributed', () => {
   assert.equal(a.note, null);
   const b = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu22', sites, here: null });
   assert.equal(b.imageOS, null);
-  assert.match(b.note, /This check did not run on ubuntu-latest/);
+  assert.match(b.note, /No GITHUB_JOB says which job this check ran in/);
+});
+
+test('with no GITHUB_JOB a job pinned to the new image is the likelier runner', () => {
+  // Nothing says which job this check is in, so a plain `runs-on: ubuntu-26.04`
+  // elsewhere explains the image as well as the migration having landed does.
+  const y = [
+    'jobs:',
+    '  build:',
+    '    runs-on: ubuntu-latest',
+    '  compat:',
+    '    runs-on: ubuntu-26.04',
+  ].join('\n');
+  const sites = extractFloatingSites(y, 'ci.yml');
+  const others = extractLabelSites(y, 'ci.yml');
+  const a = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu26', sites, others, here: null });
+  assert.equal(a.imageOS, null);
+  assert.match(a.note, /ask for ubuntu-26\.04 by name/);
+  assert.notEqual(
+    migrationStatus('ubuntu-latest', { now: DURING, imageOS: a.imageOS }).state,
+    MIGRATION_STATE.MIGRATED,
+  );
+  const scoped = attributeImageOS({
+    label: 'ubuntu-latest', imageOS: 'ubuntu26', sites, others, here: { job: 'build', file: 'ci.yml' },
+  });
+  assert.equal(scoped.imageOS, 'ubuntu26', 'the job id settles it');
+});
+
+test('a job id the calling workflow does not use is looked up in the callee', () => {
+  // A reusable workflow reports the caller in GITHUB_WORKFLOW_REF, and the
+  // caller is a scanned file: the job id still has to decide which site is ours.
+  const callee = [{ label: 'ubuntu-latest', file: 'build.yml', line: 6, col: 14, job: 'build' }];
+  const caller = [{ label: 'ubuntu-22.04', file: 'release.yml', line: 4, col: 14, job: 'publish' }];
+  const here = { job: 'build', file: 'release.yml' };
+  assert.equal(jobMatcher(here, [...callee, ...caller])(callee[0]), true);
+  const a = attributeImageOS({ label: 'ubuntu-latest', imageOS: 'ubuntu24', sites: callee, others: caller, here });
+  assert.equal(a.imageOS, 'ubuntu24');
+  assert.equal(a.note, null);
+  const shadowed = [{ ...caller[0], job: 'build' }];
+  assert.equal(
+    jobMatcher(here, [...callee, ...shadowed])(callee[0]),
+    false,
+    'the caller has a job of that id, so the file decides again',
+  );
 });
 
 /**
