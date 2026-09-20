@@ -296,6 +296,19 @@ test('imageDiffs tolerates a manifest with no kernel or systemd line', () => {
   );
 });
 
+test('a header field one side does not publish is not a removal', () => {
+  // `plan --from ubuntu-24.04 --to windows-2025` is a legal comparison, and
+  // Windows manifests carry no kernel or systemd line.
+  const rows = imageDiffs(
+    { osVersion: '24.04.5 LTS', kernelVersion: '6.17.0-1022-azure', systemdVersion: '255.4' },
+    { osVersion: 'Windows Server 2025' },
+  );
+  assert.deepEqual(
+    rows.filter((d) => d.changed).map((d) => d.tool),
+    ['OS'],
+  );
+});
+
 /* ----------------------------------------------------------------- report */
 
 test('each state gets its own sentence, and the anomaly says so', async () => {
@@ -812,6 +825,25 @@ test('with no job at all, a matrix leg is not described as a pin', async () => {
   });
   assert.doesNotMatch(b.note, /ask for ubuntu-26.04 by name/, 'the only site is a matrix leg');
   assert.match(b.note, /A matrix in these workflows can be scheduled onto ubuntu-26.04/);
+});
+
+test('a repo with no tools still gets the migration gate, and its exit code', async () => {
+  // The gate reads the workflow files, not the tool list, so the annotation was
+  // printed while the run exited 2 with no reason line.
+  const r = await guard(
+    {
+      'fail-on-migration': '30',
+      workflows: path.join(FIXTURES, 'workflows-no-tools'),
+      'lock-file': path.join(FIXTURES, 'workflows-no-tools', 'no-such-lock.json'),
+      'update-lock': false,
+    },
+    { ImageOS: 'ubuntu24', ImageVersion: '20260907.300.1' },
+    BEFORE,
+  );
+  assert.equal(r.code, EXIT_DRIFT, 'the gate decides the exit code, not the empty tool list');
+  assert.match(r.stdout, /ubuntu-latest becomes ubuntu-26.04 in 18 days/);
+  assert.match(r.stderr, /--fail-on-migration 30 is set\./);
+  assert.match(r.stderr, /No tools detected/, 'the usage advice is still printed');
 });
 
 test('a namesake job that matrixes onto the image is named as one, not as a leg', () => {

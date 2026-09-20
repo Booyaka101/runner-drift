@@ -744,7 +744,13 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   if (!tools.length) {
     out(io.stderr, 'No tools detected in your workflows and none in the lock file.');
     out(io.stderr, 'Pass them explicitly: runner-drift guard --tools python,cmake,clang');
-    return EXIT_USAGE;
+    // The two label gates read the workflow files, not the tool list, so they
+    // have already found whatever they were going to find.
+    const doc = laneDocument({ retirement, migration });
+    if (opts.json && Object.keys(doc).length) out(io.stdout, JSON.stringify(doc, null, 2));
+    if (retiring) reportRetirement(io, retiring);
+    if (migrating) reportMigration(io, migrating);
+    return retiring || migrating ? EXIT_DRIFT : EXIT_USAGE;
   }
 
   // Observe the live runner: probe first, manifest as the fallback.

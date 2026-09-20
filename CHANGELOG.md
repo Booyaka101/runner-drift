@@ -205,6 +205,16 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   explanation, exactly as it does when there is no job id at all, and says so
   rather than reporting the label as migrated.
 
+- A repo with no tools to watch exited 2 from `guard` before the retirement and
+  migration gates could report, so the annotation was printed, the reason line
+  was not, and CI saw a usage error instead of a failed check. Both gates read
+  the workflow files rather than the tool list, so they now report and decide the
+  exit code; the advice about `--tools` is still printed.
+
+- A manifest header field one side does not publish was reported as a removal.
+  `plan --from ubuntu-24.04 --to windows-2025` said the kernel and systemd had
+  gone, in MAJOR red, when Windows manifests simply have no such line.
+
 - A run that could not be placed in a file took a plain `runs-on: ubuntu-latest`
   from any file with a job of the same id. Two `build` jobs, one on
   `ubuntu-latest` and one on `windows-latest`, and a run reporting a caller the
