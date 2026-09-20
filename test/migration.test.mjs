@@ -548,6 +548,17 @@ test('a missing workflow directory is a notice, not an error', async () => {
   assert.match(r.stdout, /no floating labels to check for migration/);
 });
 
+test('both lint lanes with no workflow directory say so once', async () => {
+  const r = await guard({
+    tools: 'node',
+    'fail-on-migration': '30',
+    'fail-on-retirement': '60',
+    workflows: path.join(FIXTURES, 'definitely-not-here'),
+  });
+  assert.equal(r.code, EXIT_OK);
+  assert.equal(r.stdout.match(/No workflow directory/g).length, 2, 'the annotation and its log line');
+});
+
 test('a bad --fail-on-migration value is a usage error', async () => {
   for (const bad of ['soon', '-5', '2.5', '']) {
     const r = await guard({ tools: 'node', 'fail-on-migration': bad });

@@ -242,6 +242,7 @@ function matrixLabels(lines) {
   const found = [];
   let scalar = null;
   let matrixAt = null;
+  let strategyAt = null;
   for (let i = 0; i < lines.length; i++) {
     const text = stripComment(lines[i]);
     if (scalar !== null) {
@@ -264,8 +265,14 @@ function matrixLabels(lines) {
       // Under `matrix:` every key is a dimension the job varies over, so a
       // `matrix.name` of image labels is values, not a step title.
       if (matrixAt !== null && key[1].length <= matrixAt) matrixAt = null;
+      if (strategyAt !== null && key[1].length <= strategyAt) strategyAt = null;
       const prose = matrixAt === null && PROSE_KEYS.has(name);
-      if (name === 'matrix') matrixAt = key[1].length;
+      // Only `strategy.matrix` is one. A job may be called `matrix`, and its
+      // steps still have titles.
+      if (name === 'matrix' && strategyAt !== null && key[1].length > strategyAt) {
+        matrixAt = key[1].length;
+      }
+      if (name === 'strategy') strategyAt = key[1].length;
       if (/^[|>]/.test(value) || (prose && (value || foldsOver(lines, i, owns)))) {
         scalar = owns;
         continue;

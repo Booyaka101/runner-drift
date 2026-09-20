@@ -262,6 +262,13 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   every key is a dimension the job varies over, and the prose keys only hold
   prose outside it.
 
+- A job called `matrix` turned off the prose keys for its whole body, since the
+  scan matched the key name anywhere. Only `strategy.matrix` is a matrix now, so
+  a step title in that job is prose like any other.
+
+- Running both lint lanes with no workflow directory reported the one missing
+  directory twice. The scan is memoized for the run, and the notice is too.
+
 - A workflow title mentioning a label was read as a runner the workflow asks
   for. `run-name: nightly build on ubuntu-22.04` annotated the title line with a
   retirement `::error` for an image the file never uses, as did an input's

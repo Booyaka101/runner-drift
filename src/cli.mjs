@@ -311,9 +311,15 @@ function laneDocument({ runners = null, retirement = null, migration = null }) {
 async function scanForLane(scan, io, nothingToCheck) {
   const scanned = await scan();
   if (!scanned.missing) return scanned;
-  const msg = `No workflow directory at ${scanned.dir} — ${nothingToCheck}.`;
-  out(io.stdout, notice(msg));
-  out(io.stdout, msg);
+  // The scan is memoized for the run, so the second lane to ask about the same
+  // missing directory carries the first one's mark and says nothing. One
+  // condition, one notice.
+  if (!scanned.said) {
+    scanned.said = true;
+    const msg = `No workflow directory at ${scanned.dir} — ${nothingToCheck}.`;
+    out(io.stdout, notice(msg));
+    out(io.stdout, msg);
+  }
   return null;
 }
 

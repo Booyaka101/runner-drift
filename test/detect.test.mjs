@@ -375,6 +375,18 @@ test('a label written in a step name or a condition is not a runner', () => {
   assert.deepEqual(extractLabels(y), ['ubuntu-24.04']);
 });
 
+test('a job called matrix is not a matrix block', () => {
+  const y = [
+    'jobs:',
+    '  matrix:',
+    '    runs-on: ${{ inputs.runner }}',
+    '    steps:',
+    '      - name: drop macos-14 from the support table',
+    '        run: make',
+  ].join(String.fromCharCode(10));
+  assert.deepEqual(extractLabels(y), [], 'the step title is prose in any job');
+});
+
 test('a run-name is a title, not a runner the workflow asks for', () => {
   const y = [
     'run-name: nightly build on ubuntu-22.04 by ${{ github.actor }}',
