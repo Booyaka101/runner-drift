@@ -379,7 +379,7 @@ const MIGRATION_SENTENCE = {
   [MIGRATION_STATE.MIGRATED]: (s) =>
     `The scheduled ${s.label} migration has reached this runner: ${s.from} -> ${s.to}, rollout ${s.starts} to ${s.ends}.`,
   [MIGRATION_STATE.AMBIGUOUS]: (s) =>
-    `${s.label} is mid-rollout from ${s.from} to ${s.to}, finishing ${dateWithCountdown(s.ends, s.daysToEnd)}. Which of the two this job ran on is not known here.`,
+    `${s.label} is mid-rollout from ${s.from} to ${s.to}, finishing ${dateWithCountdown(s.ends, s.daysToEnd)}. Until then the label means either image, and which one a job gets depends on the runner it lands on.`,
   [MIGRATION_STATE.SETTLED]: (s) =>
     `${s.label} finished migrating from ${s.from} to ${s.to} on ${dateWithCountdown(s.ends, s.daysToEnd)}; it now means ${s.to}.`,
   [MIGRATION_STATE.STALE]: (s) =>

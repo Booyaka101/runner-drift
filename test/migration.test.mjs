@@ -306,7 +306,7 @@ test('each state gets its own sentence, and the anomaly says so', async () => {
   );
   assert.match(sentence(DURING, 'ubuntu24'), /this runner served ubuntu-24\.04/);
   assert.match(sentence(DURING, 'ubuntu26'), /has reached this runner/);
-  assert.match(sentence(DURING, null), /not known here/);
+  assert.match(sentence(DURING, null), /the label means either image/);
   assert.match(sentence(AFTER, null), /finished migrating/);
   assert.match(sentence(AFTER, 'ubuntu24'), /anomaly, not drift/);
   assert.match(sentence(AFTER, 'ubuntu22'), /neither ubuntu-24\.04 nor ubuntu-26\.04/);
