@@ -595,6 +595,12 @@ read the same [public image manifest](https://github.com/actions/runner-images/b
 Invoking `xcodebuild` or `xcrun` in a `run:` step selects the `Xcode` inventory;
 `--tools Xcode` selects it explicitly.
 
+Detection recognizes quoted executable paths and environment assignments with
+spaces. Quoted text, shell comments and here-document bodies do not select
+tools, and YAML written inside a shell script does not add runner targets.
+The scanner does not evaluate shell expansions, dynamic commands or YAML
+expressions; use `--tools Xcode` and `--label` when detection is insufficient.
+
 For example, save this job in `.github/workflows/build.yml`:
 
 ```yaml
@@ -642,6 +648,8 @@ The guard transcript was verified locally with `ImageOS=macos27` and
 `ImageVersion=20261022.0305.3`, not by buying or launching a macOS job. Runtime
 `macos27` resolves to `xcode-27` without a lock; with a lock it preserves either
 Xcode alias. This equivalence does not apply to other macOS manifest families.
+Comparing the two aliases with `plan` uses one shared manifest snapshot, so a
+concurrent upstream update cannot produce a false difference between them.
 If workflows contain both aliases, pass `init --label xcode-27-xlarge` (or
 `xcode-27`) explicitly and use a separate lock file per chosen label.
 

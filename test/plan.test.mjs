@@ -30,6 +30,29 @@ test('plan between Xcode aliases has unchanged inventory and no artificial tool 
   assert.deepEqual(JSON.parse(r.stdout).unchanged, ['Xcode']);
 });
 
+for (const [from, to] of [['xcode-27', 'xcode-27-xlarge'], ['xcode-27-xlarge', 'xcode-27'],
+  ['xcode-27', 'xcode-27']]) {
+  test(`plan ${from} to ${to} uses one consistent manifest snapshot`, async () => {
+    const cap = captureIO();
+    const calls = [];
+    const code = await runPlan({ from, to, tools: 'Xcode', json: true }, cap.io, {
+      now: NOW,
+      loadManifest: async (label) => {
+        calls.push(label);
+        const manifest = await loadFixtureManifest(label);
+        return calls.length === 1 ? manifest : { ...manifest, imageVersion: '20261023.0307.1', tools: { Xcode: ['28.0'] } };
+      },
+    });
+    assert.equal(code, EXIT_OK);
+    const j = JSON.parse(cap.stdout);
+    assert.equal(j.from, from);
+    assert.equal(j.to, to);
+    assert.equal(j.fromImage, j.toImage);
+    assert.deepEqual(j.diffs, []);
+    assert.deepEqual(calls, [from]);
+  });
+}
+
 async function plan(opts) {
   const cap = captureIO();
   const code = await runPlan(

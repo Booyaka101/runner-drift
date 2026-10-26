@@ -190,7 +190,7 @@ function concreteLabels(labels) {
     if (l === SELF_HOSTED || isFloating(l)) return false;
     if (known.has(l)) return true;
     if (selfHosted) return false;
-    return /^(ubuntu|windows|macos)-/i.test(l);
+    return /^(ubuntu|windows|macos|xcode)-/i.test(l);
   });
 }
 
@@ -1059,7 +1059,9 @@ export async function runPlan(opts, io = process, deps = {}) {
     return EXIT_USAGE;
   }
 
-  const [a, b] = await Promise.all([load(from), load(to)]);
+  // Aliases name one image: two main-branch reads can straddle a readme update.
+  const fromManifest = load(from);
+  const [a, b] = await Promise.all([fromManifest, sameManifestFamily(from, to) ? fromManifest : load(to)]);
   for (const m of [a, b]) {
     if (m.skipped) {
       out(io.stderr, m.reason);

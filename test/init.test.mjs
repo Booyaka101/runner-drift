@@ -164,6 +164,53 @@ test('both Xcode aliases still require explicit selection, and --tools Xcode ove
   }
 });
 
+test('init ignores another literal job\'s env value when selecting a matrix runner', async () => {
+  const { dir, workflows } = await repo({
+    'build.yml': [
+      'jobs:',
+      '  apple:',
+      '    strategy:',
+      '      matrix:',
+      '        os: [xcode-27]',
+      '    runs-on: ${{ matrix.os }}',
+      '    steps:',
+      '      - run: xcodebuild -version',
+      '  linux:',
+      '    runs-on: ubuntu-latest',
+      '    env:',
+      '      TARGET_IMAGE: xcode-27-xlarge',
+    ].join('\n'),
+  });
+  const body = await readFixture('xcode-27');
+  const api = stubApi(() => ({ status: 200, body }));
+  try {
+    const r = await init({ workflows, 'lock-file': path.join(dir, 'lock.json'), json: true });
+    assert.equal(r.code, EXIT_OK, r.stderr);
+    assert.equal(JSON.parse(r.stdout).lock.label, 'xcode-27');
+  } finally {
+    api.restore();
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+for (const label of ['xcode-99', 'xcode-27-typo']) {
+  test(`init does not silently discard unknown image-shaped ${label}`, async () => {
+    const { dir, workflows } = await repo({
+      'build.yml': `jobs:\n  build:\n    runs-on: ${label}\n    steps:\n      - run: xcodebuild -version\n`,
+    });
+    const api = stubApi(() => { throw new Error('Unknown labels should not need the network'); });
+    try {
+      const r = await init({ workflows, 'lock-file': path.join(dir, 'lock.json') });
+      assert.equal(r.code, EXIT_USAGE);
+      assert.match(r.stderr, new RegExp(`Unknown runner label "${label}"`));
+      assert.equal(api.calls.length, 0);
+    } finally {
+      api.restore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+}
+
 for (const status of [404, 429, 503, 'network', 'empty', 'missing']) {
   test(`Xcode init handles ${status} without a stack trace`, async () => {
     const { dir, workflows } = await repo({

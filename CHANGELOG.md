@@ -23,8 +23,17 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
-- Quoted command names and paths without spaces are recognized by the existing
-  command scanner, including quoted `xcodebuild` and `xcrun` invocations.
+- Quoted executable paths and environment assignments containing spaces are
+  recognized, including `xcodebuild` and `xcrun` invocations. Shell separators
+  inside quoted text or comments, redirection ampersands and here-document
+  bodies no longer create false tool detections.
+- Flat runner labels now use the same job scope as positioned label sites,
+  including self-hosted matrix values. YAML inside shell steps is not scanned
+  as runner configuration; dashed `run:` blocks retain sibling step keys.
+- Unknown Xcode-shaped runner labels report an error rather than being silently
+  discarded during initialization.
+- Plans between aliases sharing one manifest use a single inventory snapshot,
+  preventing false drift when upstream updates between reads.
 
 ## [1.4.1] — 2026-09-20
 
