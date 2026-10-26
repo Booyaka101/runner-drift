@@ -22,6 +22,7 @@ import {
   migrationFor,
   migrationStatus,
   normaliseLabel,
+  sameManifestFamily,
 } from './labels.mjs';
 import { diffManifestTools, loadManifest, resolveManifestVersions } from './manifest.mjs';
 import { imageDiffs, surveyMigration } from './migration.mjs';
@@ -76,7 +77,7 @@ async function version() {
     const pkg = JSON.parse(await readFile(path.join(HERE, '..', 'package.json'), 'utf8'));
     return pkg.version;
   } catch {
-    return '1.4.1';
+    return '1.5.0';
   }
 }
 
@@ -570,7 +571,7 @@ export async function runInit(opts, io = process) {
   const written = await writeLock(
     {
       label,
-      imageOS: Object.keys(IMAGE_OS_TO_LABEL).find((k) => IMAGE_OS_TO_LABEL[k] === label) ?? null,
+      imageOS: Object.keys(IMAGE_OS_TO_LABEL).find((k) => sameManifestFamily(IMAGE_OS_TO_LABEL[k], label)) ?? null,
       imageVersion: manifest.imageVersion,
       tools: lockTools,
       updatedAt: new Date().toISOString(),
@@ -721,7 +722,10 @@ export async function runGuard(opts, io = process, env = process.env, deps = {})
   }
 
   const lock = await getLock();
-  let label = labelForImageOS(imageOS) || lock?.label || null;
+  const observedLabel = labelForImageOS(imageOS);
+  let label = sameManifestFamily(observedLabel, lock?.label)
+    ? lock.label
+    : observedLabel || lock?.label || null;
 
   if (!label) {
     const detected = await scan();

@@ -4,6 +4,28 @@ All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - Unreleased
+
+### Added
+
+- Support for `xcode-27` and `xcode-27-xlarge`, sharing the public
+  `images/macos/xcode-27-arm64-Readme.md` inventory and commit history.
+  Runtime `ImageOS=macos27` resolves to this family without changing other
+  macOS mappings. Guard preserves either committed alias, but still identifies
+  moves to a different manifest family.
+- Xcode runner matrix detection and automatic `Xcode` selection for invoked
+  `xcodebuild` and `xcrun` commands. `--tools Xcode` also works. Xcode remains
+  manifest-only: selected defaults, `DEVELOPER_DIR`, SDK contents and optional
+  Metal components are not verified.
+- Offline regressions using a real pinned Xcode manifest and path-specific
+  commit response, including numeric image ordering, drift attribution,
+  thresholds, label identity, and missing-inventory/network failure behavior.
+
+### Fixed
+
+- Quoted command names and paths without spaces are recognized by the existing
+  command scanner, including quoted `xcodebuild` and `xcrun` invocations.
+
 ## [1.4.1] — 2026-09-20
 
 ### Fixed

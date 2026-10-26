@@ -13,7 +13,7 @@ import { isFloating, normaliseLabel } from './labels.mjs';
 import { lookup } from './tables.mjs';
 
 const WORKFLOW_EXT = /\.ya?ml$/i;
-const LABEL_SHAPE = /^(ubuntu|windows|macos)-[a-z0-9.-]+$/i;
+const LABEL_SHAPE = /^(ubuntu|windows|macos|xcode)-[a-z0-9.-]+$/i;
 
 export const SELF_HOSTED = 'self-hosted';
 
@@ -111,7 +111,7 @@ export function commandsInScript(script) {
       if (next === s) break;
       s = next;
     }
-    const token = s.split(/\s+/)[0];
+    const token = s.split(/\s+/)[0].replace(/^['"]|['"]$/g, '');
     if (!token) continue;
     const base = token.split(/[\\/]/).pop().replace(/\.(exe|cmd|bat)$/i, '');
     if (lookup(COMMAND_ALIASES, base.toLowerCase())) found.add(base.toLowerCase());

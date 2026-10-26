@@ -17,6 +17,67 @@ import { canonicalTool, manifestCandidates } from '../src/tools.mjs';
 import { isProbeable, probeTool } from '../src/probe.mjs';
 import { FIXTURES } from './helpers.mjs';
 
+for (const label of ['xcode-27', 'xcode-27-xlarge']) {
+  for (const target of [
+    `"${label.toUpperCase()}"`,
+    `[ '${label}' ]`,
+    `\n      - '${label}'`,
+    `\n      group: apple\n      labels: '${label}'`,
+    `\n      group: apple\n      labels: [ '${label}' ]`,
+    `\n      group: apple\n      labels:\n        - '${label}'`,
+  ]) {
+    test(`Xcode target ${JSON.stringify(target)}`, () => {
+      const y = `jobs:\n  build:\n    runs-on: ${target}\n    steps:\n      - run: xcodebuild -version\n`;
+      const scan = analyseWorkflow(y);
+      assert.deepEqual(scan.labels, [label]);
+      assert.deepEqual(scan.tools, ['Xcode']);
+      assert.equal(scan.labelSites[0].job, 'build');
+      assert.equal(scan.labelSites[0].label, label);
+    });
+  }
+}
+
+test('Xcode matrix fallback retains job scoping and ignores prose and shell', () => {
+  const y = [
+    'name: xcode-99',
+    '# xcode-98',
+    'jobs:',
+    '  apple:',
+    '    strategy:',
+    '      matrix:',
+    '        os: ["XCODE-27", \'xcode-27-xlarge\']',
+    '    runs-on:',
+    '      labels: ${{ matrix.os }}',
+    '    steps:',
+    '      - name: xcode-97',
+    '        run: |',
+    '          echo xcode-96',
+    '          # xcrun --version',
+    '  linux:',
+    '    runs-on: ubuntu-24.04',
+    '    env:',
+    '      OTHER: xcode-95',
+  ].join('\n');
+  const sites = extractLabelSites(y);
+  assert.deepEqual(sites.filter((s) => s.job === 'apple').map((s) => s.label).sort(),
+    ['xcode-27', 'xcode-27-xlarge']);
+  assert.deepEqual(sites.filter((s) => s.job === 'linux').map((s) => s.label), ['ubuntu-24.04']);
+  assert.deepEqual(analyseWorkflow(y).tools, []);
+});
+
+test('Xcode commands, not prose, select manifest-only inventory', () => {
+  for (const command of ['xcodebuild -version', 'xcrun --sdk macosx clang',
+    'env DEVELOPER_DIR=/Applications/Xcode.app sudo xcodebuild test',
+    '"/usr/bin/XCODEBUILD" -version', "'xcrun' --version"]) {
+    assert.deepEqual(analyseWorkflow(`steps:\n  - run: ${command}\n`).tools, ['Xcode'], command);
+  }
+  assert.deepEqual(analyseWorkflow('name: xcodebuild\nsteps:\n  - run: echo xcrun xcodebuild\n').tools, []);
+  assert.equal(canonicalTool('xCoDe'), 'Xcode');
+  assert.equal(canonicalTool('xcrun'), 'Xcode');
+  assert.deepEqual(manifestCandidates('Xcode'), ['Xcode']);
+  assert.equal(isProbeable('Xcode'), false);
+});
+
 test('extracts an inline runs-on label', () => {
   assert.deepEqual(extractLabels('jobs:\n  a:\n    runs-on: ubuntu-22.04\n'), ['ubuntu-22.04']);
 });
